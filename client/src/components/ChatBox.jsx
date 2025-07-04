@@ -24,6 +24,7 @@ const ChatBox = ({ onShowLists }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastActionType, setLastActionType] = useState('');
+  const [showAbout, setShowAbout] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -156,6 +157,10 @@ const ChatBox = ({ onShowLists }) => {
     }
   };
 
+  const handleAboutClick = () => {
+    setShowAbout(true);
+  };
+
   return (
     <div style={styles.container}>
       {/* Response Display Area */}
@@ -205,24 +210,96 @@ const ChatBox = ({ onShowLists }) => {
 
       {/* Input Form */}
       <form onSubmit={handleSubmit} style={styles.form}>
-        <div style={styles.inputContainer}>
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type your message here..."
-            style={styles.textarea}
-            disabled={loading}
-          />
-          <button 
-            type="submit" 
-            disabled={loading || !message.trim()}
-            style={styles.button}
-          >
-            {loading ? 'Sending...' : 'Send'}
-          </button>
+        <div style={{ ...styles.inputContainer, flexDirection: 'column', gap: 8 }}>
+          {/* About Button (now inside input area) */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+            <button 
+              onClick={handleAboutClick}
+              style={styles.aboutButton}
+              className="about-button"
+              type="button"
+            >
+              About
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder="Type your message here..."
+              style={styles.textarea}
+              disabled={loading}
+            />
+            <button 
+              type="submit" 
+              disabled={loading || !message.trim()}
+              style={styles.button}
+            >
+              {loading ? 'Sending...' : 'Send'}
+            </button>
+          </div>
         </div>
       </form>
+
+      {/* About Modal */}
+      {showAbout && (
+        <div style={styles.modalOverlay} onClick={() => setShowAbout(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>AI Commands Guide</h2>
+              <button 
+                onClick={() => setShowAbout(false)}
+                style={styles.closeButton}
+                className="close-button"
+              >
+                ×
+              </button>
+            </div>
+            <div style={styles.modalBody}>
+              <h3 style={styles.sectionTitle}>🤖 Contact Management</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Update Contact:</strong> "update contact [name]'s [field] to [value]"</li>
+                <li><strong>Edit Contact:</strong> "edit [name]'s [field] to [value]"</li>
+                <li><strong>Change Contact:</strong> "change [name]'s [field] to [value]"</li>
+                <li><strong>Set Contact:</strong> "set [name]'s [field] to [value]"</li>
+              </ul>
+              
+              <h3 style={styles.sectionTitle}>📋 List Creation</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Create List:</strong> "create list of [criteria]"</li>
+                <li><strong>Make List:</strong> "make list of [criteria]"</li>
+                <li><strong>Build List:</strong> "build list of [criteria]"</li>
+                <li><strong>Generate List:</strong> "generate list of [criteria]"</li>
+              </ul>
+              
+              <h3 style={styles.sectionTitle}>🔍 Contact Search</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Find Contacts:</strong> "find all [criteria]"</li>
+                <li><strong>Show Contacts:</strong> "show me [criteria]"</li>
+                <li><strong>List Contacts:</strong> "list of [criteria]"</li>
+              </ul>
+              
+              <h3 style={styles.sectionTitle}>📊 Contact Lists</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Show Lists:</strong> "show me my lists"</li>
+                <li><strong>Display Lists:</strong> "display my lists"</li>
+                <li><strong>List Lists:</strong> "list my lists"</li>
+              </ul>
+              
+              <h3 style={styles.sectionTitle}>💬 General Chat</h3>
+              <p style={styles.generalText}>
+                For any other questions or general conversation, simply type your message and the AI will respond naturally.
+              </p>
+              
+              <h3 style={styles.sectionTitle}>📝 Available Fields</h3>
+              <p style={styles.fieldsText}>
+                <strong>Contact fields:</strong> firstName, lastName, email, phone, company, address, businessSector, linkedin, notes
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -350,6 +427,112 @@ const styles = {
     borderRadius: '4px',
     fontSize: '12px',
   },
+  aboutContainer: {
+    marginBottom: '15px',
+    display: 'flex',
+    justifyContent: 'center',
+  },
+  aboutButton: {
+    padding: '12px 24px',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    color: 'white',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '400',
+    fontFamily: 'Georgia, serif',
+    transition: 'all 0.3s ease',
+    backdropFilter: 'blur(10px)',
+    WebkitBackdropFilter: 'blur(10px)',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    backdropFilter: 'blur(5px)',
+    WebkitBackdropFilter: 'blur(5px)',
+  },
+  modalContent: {
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: '16px',
+    padding: '30px',
+    maxWidth: '600px',
+    width: '90%',
+    maxHeight: '80vh',
+    overflowY: 'auto',
+    boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+    border: '1px solid rgba(255, 255, 255, 0.3)',
+    backdropFilter: 'blur(20px)',
+    WebkitBackdropFilter: 'blur(20px)',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '25px',
+    borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
+    paddingBottom: '15px',
+  },
+  modalTitle: {
+    margin: 0,
+    fontSize: '24px',
+    fontWeight: '400',
+    color: '#2c2c2c',
+    fontFamily: 'Georgia, serif',
+  },
+  closeButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '28px',
+    cursor: 'pointer',
+    color: '#666',
+    padding: '0',
+    width: '30px',
+    height: '30px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: '50%',
+    transition: 'all 0.2s ease',
+  },
+  modalBody: {
+    color: '#2c2c2c',
+    fontFamily: 'Georgia, serif',
+    lineHeight: '1.6',
+  },
+  sectionTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    margin: '25px 0 15px 0',
+    color: '#2c2c2c',
+    borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
+    paddingBottom: '8px',
+  },
+  commandList: {
+    margin: '15px 0',
+    paddingLeft: '20px',
+  },
+  generalText: {
+    fontSize: '14px',
+    margin: '15px 0',
+    color: '#666',
+  },
+  fieldsText: {
+    fontSize: '14px',
+    margin: '15px 0',
+    color: '#666',
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    padding: '12px',
+    borderRadius: '8px',
+  },
 };
 
 // Add CSS animation for spinner
@@ -387,6 +570,27 @@ styleSheet.textContent = `
   .chat-button:active {
     transform: translateY(0);
     box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  }
+  
+  .about-button:hover {
+    background-color: #333333 !important;
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(0,0,0,0.2);
+  }
+  
+  .about-button:active {
+    transform: translateY(0);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  }
+  
+  .close-button:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+    color: #333;
+  }
+  
+  .command-list li {
+    margin: 8px 0;
+    font-size: 14px;
   }
 `;
 document.head.appendChild(styleSheet);
