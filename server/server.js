@@ -4,7 +4,7 @@ const OpenAI = require('openai');
 require('dotenv').config();
 
 // Initialize Firebase Admin SDK
-const { db } = require('./firebase');
+const { admin, db } = require('./firebase');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -120,7 +120,7 @@ app.post('/ai-contact-action', async (req, res) => {
 You are a CRM assistant that analyzes user requests and determines what they want to do with contact information.
 
 Available actions:
-- UPDATE_CONTACT: User wants to update existing contact information
+- UPDATE_CONTACT: User wants to update existing contact information (edit, change, modify, set, update)
 - CREATE_CONTACT: User wants to create a new contact
 - DELETE_CONTACT: User wants to delete a contact or contact field
 - SEARCH_CONTACT: User wants to find or search for contacts
@@ -129,6 +129,20 @@ Available actions:
 - GENERAL_QUERY: User is asking a general question about the CRM system
 
 Available contact fields: firstName, lastName, email, phone, company, address, businessSector, linkedin, notes
+
+IMPORTANT: For UPDATE_CONTACT, look for these patterns:
+- "edit [contact] [field] to [value]"
+- "change [contact] [field] to [value]"
+- "update [contact] [field] to [value]"
+- "set [contact] [field] to [value]"
+- "modify [contact] [field] to [value]"
+- "[contact] [field] should be [value]"
+- "[contact] [field] is now [value]"
+
+Contact identification can be by:
+- Email address (contains @)
+- Full name (firstName + lastName)
+- Company name
 
 Analyze the following user request and respond with ONLY a JSON object in this exact format:
 {
@@ -171,6 +185,7 @@ Respond with ONLY the JSON object, no other text.`;
     let intentAnalysis;
     try {
       intentAnalysis = JSON.parse(intentResponse);
+      console.log('🔍 Intent Analysis:', intentAnalysis);
     } catch (parseError) {
       console.error('Failed to parse intent analysis:', intentResponse);
       return res.status(500).json({ 
@@ -179,12 +194,14 @@ Respond with ONLY the JSON object, no other text.`;
       });
     }
 
-    // Check confidence level
-    if (intentAnalysis.confidence < 0.3) {
+    // Check confidence level - be more lenient for update commands
+    const minConfidence = intentAnalysis.intent === 'UPDATE_CONTACT' ? 0.2 : 0.3;
+    if (intentAnalysis.confidence < minConfidence) {
       return res.status(400).json({ 
         error: 'I\'m not sure what you want to do. Please be more specific.',
         details: 'Low confidence in intent analysis',
-        suggestion: intentAnalysis.userMessage
+        suggestion: intentAnalysis.userMessage,
+        debug: intentAnalysis
       });
     }
 
@@ -378,11 +395,14 @@ Respond with ONLY the JSON object, no other text.`;
 async function handleContactUpdate(extractedData, originalCommand) {
   const { contactIdentifier, field, value } = extractedData;
   
+  console.log('🔍 Contact Update Debug:', { contactIdentifier, field, value });
+  
   if (!contactIdentifier || !field || !value) {
     return {
       success: false,
       error: 'Missing required information for contact update. Please specify the contact, field, and new value.',
-      details: 'Incomplete update data'
+      details: 'Incomplete update data',
+      debug: { contactIdentifier, field, value }
     };
   }
 
@@ -397,28 +417,44 @@ async function handleContactUpdate(extractedData, originalCommand) {
   }
 
   // Find the contact
+  console.log('🔍 Searching for contact with identifier:', contactIdentifier);
   const contact = await findContact(contactIdentifier);
+  
   if (!contact) {
     return {
       success: false,
-      error: 'Contact not found. Please check the contact details and try again.',
-      details: `No contact found with identifier: ${contactIdentifier}`
+      error: `Contact not found with identifier: "${contactIdentifier}". Please check the contact details and try again.`,
+      details: `No contact found with identifier: ${contactIdentifier}`,
+      suggestion: 'Try using the contact\'s email address, full name, or company name.'
     };
   }
 
+  console.log('✅ Found contact:', contact.data.firstName, contact.data.lastName);
+
   // Update the contact
-  await contact.ref.update({ [field]: value });
+  try {
+    await contact.ref.update({ [field]: value });
+    console.log('✅ Contact updated successfully');
+  } catch (updateError) {
+    console.error('❌ Error updating contact:', updateError);
+    return {
+      success: false,
+      error: 'Failed to update contact. Please try again.',
+      details: 'Database update failed'
+    };
+  }
 
   // Log the action
   await logAction(originalCommand, 'update', contact.id, contact.data, field, value);
 
   return {
     success: true,
-    message: `Updated ${field} for ${contact.data.firstName} ${contact.data.lastName}`,
+    message: `✅ Updated ${field} for ${contact.data.firstName} ${contact.data.lastName} to "${value}"`,
     action: 'update',
     contactId: contact.id,
     field: field,
-    value: value
+    value: value,
+    contactName: `${contact.data.firstName} ${contact.data.lastName}`
   };
 }
 
@@ -553,16 +589,38 @@ async function findContact(identifier) {
   const contactsRef = db.collection('contacts');
   let contactQuery;
 
-  if (identifier.includes('@')) {
+  // Clean the identifier
+  const cleanIdentifier = identifier.trim();
+
+  if (cleanIdentifier.includes('@')) {
     // Search by email
-    contactQuery = contactsRef.where('email', '==', identifier);
-  } else if (identifier.includes(' ')) {
+    contactQuery = contactsRef.where('email', '==', cleanIdentifier);
+  } else if (cleanIdentifier.includes(' ')) {
     // Search by firstName + lastName
-    const [firstName, lastName] = identifier.split(' ');
-    contactQuery = contactsRef.where('firstName', '==', firstName).where('lastName', '==', lastName);
+    const nameParts = cleanIdentifier.split(' ');
+    if (nameParts.length >= 2) {
+      const firstName = nameParts[0];
+      const lastName = nameParts.slice(1).join(' '); // Handle multi-word last names
+      contactQuery = contactsRef.where('firstName', '==', firstName).where('lastName', '==', lastName);
+    } else {
+      // Try searching by firstName only
+      contactQuery = contactsRef.where('firstName', '==', cleanIdentifier);
+    }
   } else {
-    // Search by company
-    contactQuery = contactsRef.where('company', '==', identifier);
+    // Search by company or firstName
+    // First try company
+    let companySnapshot = await contactsRef.where('company', '==', cleanIdentifier).get();
+    if (!companySnapshot.empty) {
+      const contactDoc = companySnapshot.docs[0];
+      return {
+        id: contactDoc.id,
+        ref: contactDoc.ref,
+        data: contactDoc.data()
+      };
+    }
+    
+    // If no company match, try firstName
+    contactQuery = contactsRef.where('firstName', '==', cleanIdentifier);
   }
 
   const contactSnapshot = await contactQuery.get();
