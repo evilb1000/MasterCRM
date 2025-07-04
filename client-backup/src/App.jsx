@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import ChatBox from './components/ChatBox';
 import Contacts from './pages/Contacts';
 import Listings from './pages/Listings';
@@ -7,7 +7,6 @@ import ShowListsModal from './components/ShowListsModal';
 import ContactModal from './components/ContactModal';
 
 const HomePage = () => {
-  const navigate = useNavigate();
   const [showListsModal, setShowListsModal] = useState(false);
   const [selectedContact, setSelectedContact] = useState(null);
   const [showContactDetail, setShowContactDetail] = useState(false);
@@ -29,42 +28,10 @@ const HomePage = () => {
         </div>
         
         {/* Navigation */}
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: 32 }}>
-          <button
-            style={{
-              background: '#111',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '16px 32px',
-              fontSize: 20,
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-              transition: 'background 0.2s',
-            }}
-            onClick={() => navigate('/contacts')}
-          >
-            Contacts
-          </button>
-          <button
-            style={{
-              background: '#111',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '16px 32px',
-              fontSize: 20,
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-              transition: 'background 0.2s',
-            }}
-            onClick={() => navigate('/listings')}
-          >
-            Listings
-          </button>
-        </div>
+        <nav style={styles.nav}>
+          <Link to="/contacts" style={styles.linkButton}>Contacts</Link>
+          <Link to="/listings" style={styles.linkButton}>Listings</Link>
+        </nav>
       </div>
       
       {/* Show Lists Modal */}

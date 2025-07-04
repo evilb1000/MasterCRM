@@ -76,19 +76,7 @@ const ShowListsModal = ({ open, onClose, onShowContactDetail, contactDetailOpen 
             {lists.map(list => (
               <li key={list.id} style={styles.listItem}>
                 <button
-                  style={{
-                    ...styles.actionButton, 
-                    margin: 0, 
-                    padding: '8px 0', 
-                    background: 'none', 
-                    color: '#000', 
-                    fontWeight: 600, 
-                    fontSize: '1.1rem', 
-                    textAlign: 'left',
-                    transition: 'color 0.2s',
-                  }}
-                  onMouseEnter={(e) => e.target.style.color = '#fff'}
-                  onMouseLeave={(e) => e.target.style.color = '#000'}
+                  style={{...styles.actionButton, margin: 0, padding: '8px 0', background: 'none', color: '#1a237e', fontWeight: 600, fontSize: '1.1rem', textAlign: 'left'}}
                   onClick={() => { setSelectedList(list); setShowContactsModal(true); }}
                 >
                   {list.name}
