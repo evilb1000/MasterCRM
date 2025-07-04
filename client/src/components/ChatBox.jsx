@@ -51,8 +51,18 @@ const ChatBox = ({ onShowLists }) => {
       let responseText = '';
       let actionType = '';
 
+      // Debug: Log which command type is detected
+      const isList = isListCreationCommand(message);
+      const isContact = isContactActionCommand(message);
+      console.log('🔍 Command Analysis:', {
+        message,
+        isListCreation: isList,
+        isContactAction: isContact
+      });
+
       // Check if this is a list creation command
-      if (isListCreationCommand(message)) {
+      if (isList) {
+        console.log('📋 Routing to List Creation endpoint');
         // Use AI List Creation endpoint
         const result = await processListCreation(message);
         
@@ -73,7 +83,8 @@ const ChatBox = ({ onShowLists }) => {
         }
       }
       // Check if this is a contact action command
-      else if (isContactActionCommand(message)) {
+      else if (isContact) {
+        console.log('👤 Routing to Contact Action endpoint');
         // Use AI Contact Actions endpoint
         const result = await processContactAction(message);
         
@@ -84,6 +95,7 @@ const ChatBox = ({ onShowLists }) => {
           throw new Error(result.error);
         }
       } else {
+        console.log('💬 Routing to General Chat endpoint');
         // Use regular chat endpoint
         const result = await axios.post('https://us-central1-lod-crm-systems.cloudfunctions.net/chat', {
           message: message

@@ -100,9 +100,12 @@ app.post('/chat', async (req, res) => {
 app.post('/ai-contact-action', async (req, res) => {
   try {
     const { command } = req.body;
+    
+    console.log('🤖 AI Contact Action Request:', { command });
 
     // Validate input
     if (!command || typeof command !== 'string') {
+      console.log('❌ Invalid input received:', { command });
       return res.status(400).json({ 
         error: 'Invalid input. Please provide a "command" field with a string value.' 
       });
@@ -110,6 +113,7 @@ app.post('/ai-contact-action', async (req, res) => {
 
     // Check if OpenAI API key is configured
     if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'your_openai_api_key_here') {
+      console.log('❌ OpenAI API key not configured');
       return res.status(500).json({ 
         error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file.' 
       });
@@ -167,6 +171,7 @@ User request: "${command}"
 Respond with ONLY the JSON object, no other text.`;
 
     // Call OpenAI API to analyze intent
+    console.log('🔍 Sending intent analysis request to OpenAI...');
     const intentCompletion = await openai.chat.completions.create({
       model: "gpt-4",
       messages: [
@@ -180,14 +185,16 @@ Respond with ONLY the JSON object, no other text.`;
     });
 
     const intentResponse = intentCompletion.choices[0]?.message?.content || '';
+    console.log('🔍 Raw OpenAI Intent Response:', intentResponse);
     
     // Parse the intent analysis
     let intentAnalysis;
     try {
       intentAnalysis = JSON.parse(intentResponse);
-      console.log('🔍 Intent Analysis:', intentAnalysis);
+      console.log('🔍 Parsed Intent Analysis:', JSON.stringify(intentAnalysis, null, 2));
     } catch (parseError) {
-      console.error('Failed to parse intent analysis:', intentResponse);
+      console.error('❌ Failed to parse intent analysis:', intentResponse);
+      console.error('❌ Parse error:', parseError.message);
       return res.status(500).json({ 
         error: 'Failed to understand your request. Please try rephrasing.',
         details: 'Intent analysis parsing failed'
@@ -196,7 +203,10 @@ Respond with ONLY the JSON object, no other text.`;
 
     // Check confidence level - be more lenient for update commands
     const minConfidence = intentAnalysis.intent === 'UPDATE_CONTACT' ? 0.2 : 0.3;
+    console.log(`🔍 Confidence check: ${intentAnalysis.confidence} >= ${minConfidence} (${intentAnalysis.confidence >= minConfidence ? 'PASS' : 'FAIL'})`);
+    
     if (intentAnalysis.confidence < minConfidence) {
+      console.log('❌ Low confidence in intent analysis');
       return res.status(400).json({ 
         error: 'I\'m not sure what you want to do. Please be more specific.',
         details: 'Low confidence in intent analysis',
@@ -206,59 +216,74 @@ Respond with ONLY the JSON object, no other text.`;
     }
 
     // Step 2: Execute action based on intent
+    console.log(`🔍 Executing action: ${intentAnalysis.intent}`);
     let result;
     
     switch (intentAnalysis.intent) {
       case 'UPDATE_CONTACT':
+        console.log('🔧 Handling UPDATE_CONTACT...');
         result = await handleContactUpdate(intentAnalysis.extractedData, command);
         break;
         
       case 'CREATE_CONTACT':
+        console.log('🔧 Handling CREATE_CONTACT...');
         result = await handleContactCreation(intentAnalysis.extractedData, command);
         break;
         
       case 'DELETE_CONTACT':
+        console.log('🔧 Handling DELETE_CONTACT...');
         result = await handleContactDeletion(intentAnalysis.extractedData, command);
         break;
         
       case 'SEARCH_CONTACT':
+        console.log('🔧 Handling SEARCH_CONTACT...');
         result = await handleContactSearch(intentAnalysis.extractedData, command);
         break;
         
       case 'LIST_CONTACTS':
+        console.log('🔧 Handling LIST_CONTACTS...');
         result = await handleContactListing(command);
         break;
         
       case 'CREATE_LIST':
+        console.log('🔧 Handling CREATE_LIST...');
         result = await handleListCreation(intentAnalysis.extractedData, command);
         break;
         
       case 'GENERAL_QUERY':
+        console.log('🔧 Handling GENERAL_QUERY...');
         result = await handleGeneralQuery(command);
         break;
         
       default:
+        console.log(`❌ Unknown intent type: ${intentAnalysis.intent}`);
         return res.status(400).json({ 
           error: 'Unknown action type. Please try rephrasing your request.',
           details: 'Invalid intent type'
         });
     }
 
+    console.log('✅ Final result:', JSON.stringify(result, null, 2));
     res.json(result);
 
   } catch (error) {
-    console.error('Error in /ai-contact-action endpoint:', error);
+    console.error('❌ Error in /ai-contact-action endpoint:', error);
+    console.error('❌ Error stack:', error.stack);
     
     // Handle specific OpenAI errors
     if (error.status === 401) {
+      console.log('❌ OpenAI API key error');
       return res.status(401).json({ error: 'Invalid OpenAI API key' });
     } else if (error.status === 429) {
+      console.log('❌ OpenAI rate limit error');
       return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
     } else if (error.status === 400) {
+      console.log('❌ OpenAI invalid request error');
       return res.status(400).json({ error: 'Invalid request to OpenAI API' });
     }
     
     // Generic error response
+    console.log('❌ Generic error response');
     res.status(500).json({ 
       error: 'An error occurred while processing your request',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -586,32 +611,41 @@ async function handleGeneralQuery(originalCommand) {
 
 // Helper function to find a contact
 async function findContact(identifier) {
+  console.log('🔍 findContact called with identifier:', identifier);
   const contactsRef = db.collection('contacts');
   let contactQuery;
 
   // Clean the identifier
   const cleanIdentifier = identifier.trim();
+  console.log('🔍 Cleaned identifier:', cleanIdentifier);
 
   if (cleanIdentifier.includes('@')) {
     // Search by email
+    console.log('🔍 Searching by email:', cleanIdentifier);
     contactQuery = contactsRef.where('email', '==', cleanIdentifier);
   } else if (cleanIdentifier.includes(' ')) {
     // Search by firstName + lastName
     const nameParts = cleanIdentifier.split(' ');
+    console.log('🔍 Name parts:', nameParts);
     if (nameParts.length >= 2) {
       const firstName = nameParts[0];
       const lastName = nameParts.slice(1).join(' '); // Handle multi-word last names
+      console.log('🔍 Searching by firstName + lastName:', { firstName, lastName });
       contactQuery = contactsRef.where('firstName', '==', firstName).where('lastName', '==', lastName);
     } else {
       // Try searching by firstName only
+      console.log('🔍 Searching by firstName only:', cleanIdentifier);
       contactQuery = contactsRef.where('firstName', '==', cleanIdentifier);
     }
   } else {
     // Search by company or firstName
+    console.log('🔍 Searching by company first:', cleanIdentifier);
     // First try company
     let companySnapshot = await contactsRef.where('company', '==', cleanIdentifier).get();
+    console.log('🔍 Company search results:', companySnapshot.size, 'matches');
     if (!companySnapshot.empty) {
       const contactDoc = companySnapshot.docs[0];
+      console.log('✅ Found contact by company:', contactDoc.data());
       return {
         id: contactDoc.id,
         ref: contactDoc.ref,
@@ -620,16 +654,20 @@ async function findContact(identifier) {
     }
     
     // If no company match, try firstName
+    console.log('🔍 No company match, trying firstName:', cleanIdentifier);
     contactQuery = contactsRef.where('firstName', '==', cleanIdentifier);
   }
 
   const contactSnapshot = await contactQuery.get();
+  console.log('🔍 Contact search results:', contactSnapshot.size, 'matches');
   
   if (contactSnapshot.empty) {
+    console.log('❌ No contacts found');
     return null;
   }
 
   const contactDoc = contactSnapshot.docs[0];
+  console.log('✅ Found contact:', contactDoc.data());
   return {
     id: contactDoc.id,
     ref: contactDoc.ref,

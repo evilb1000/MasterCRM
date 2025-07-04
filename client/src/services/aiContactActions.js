@@ -86,15 +86,38 @@ export async function handleAIListCreation(description) {
  * @returns {boolean} True if message contains contact action keywords
  */
 export function isContactActionCommand(message) {
-  const contactKeywords = [
+  // Primary contact action keywords (high priority)
+  const primaryKeywords = [
     'update', 'change', 'set', 'modify', 'edit',
-    'delete', 'remove', 'add', 'create', 'new contact',
+    'delete', 'remove', 'add', 'create', 'new contact'
+  ];
+  
+  // Secondary keywords that indicate contact actions when combined with primary
+  const secondaryKeywords = [
     'phone', 'email', 'address', 'company', 'name',
     'contact', 'details', 'information'
   ];
   
   const lowerMessage = message.toLowerCase();
-  return contactKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  // Check for primary keywords first (these always indicate contact actions)
+  if (primaryKeywords.some(keyword => lowerMessage.includes(keyword))) {
+    return true;
+  }
+  
+  // Check for secondary keywords (need to be more specific)
+  const hasSecondary = secondaryKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  // If it has secondary keywords, check if it's not a list creation command
+  if (hasSecondary) {
+    // Make sure it's not being classified as list creation
+    const listCreationKeywords = ['create list', 'make list', 'build list', 'generate list'];
+    const isListCreation = listCreationKeywords.some(keyword => lowerMessage.includes(keyword));
+    
+    return !isListCreation;
+  }
+  
+  return false;
 }
 
 /**
@@ -108,12 +131,46 @@ export function isListCreationCommand(message) {
     'list of', 'show me', 'find all', 'get all',
     'contacts with', 'people from', 'companies in',
     'tech', 'finance', 'healthcare', 'education',
-    'linkedin', 'email', 'phone', 'notes',
-    'sector', 'industry', 'company'
+    'sector', 'industry'
+  ];
+  
+  // More specific patterns that indicate list creation
+  const specificPatterns = [
+    /create.*list/i,
+    /make.*list/i,
+    /build.*list/i,
+    /generate.*list/i,
+    /list of.*/i,
+    /show me.*/i,
+    /find all.*/i,
+    /get all.*/i,
+    /contacts with.*/i,
+    /people from.*/i,
+    /companies in.*/i
   ];
   
   const lowerMessage = message.toLowerCase();
-  return listKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  // Check for specific patterns first
+  if (specificPatterns.some(pattern => pattern.test(message))) {
+    return true;
+  }
+  
+  // Then check for general keywords (but exclude if it's clearly a contact action)
+  const hasListKeyword = listKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  // If it has list keywords but also has contact action keywords, prioritize contact action
+  if (hasListKeyword) {
+    const contactActionKeywords = ['update', 'change', 'set', 'modify', 'edit', 'delete', 'remove'];
+    const hasContactAction = contactActionKeywords.some(keyword => lowerMessage.includes(keyword));
+    
+    // If it has both, prioritize contact action (return false for list creation)
+    if (hasContactAction) {
+      return false;
+    }
+  }
+  
+  return hasListKeyword;
 }
 
 /**
