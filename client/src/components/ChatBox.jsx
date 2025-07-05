@@ -263,6 +263,8 @@ const ChatBox = ({ onShowLists }) => {
                 <li><strong>Edit Contact:</strong> "edit [name]'s [field] to [value]"</li>
                 <li><strong>Change Contact:</strong> "change [name]'s [field] to [value]"</li>
                 <li><strong>Set Contact:</strong> "set [name]'s [field] to [value]"</li>
+                <li><strong>Add Note:</strong> "add a note to [name] saying [note]"</li>
+                <li><strong>Add Note:</strong> "add note to [name]: [note]"</li>
               </ul>
               
               <h3 style={styles.sectionTitle}>📋 List Creation</h3>
@@ -519,6 +521,10 @@ const styles = {
   commandList: {
     margin: '15px 0',
     paddingLeft: '20px',
+  },
+  commandListItem: {
+    margin: '8px 0',
+    fontSize: '14px',
   },
   generalText: {
     fontSize: '14px',

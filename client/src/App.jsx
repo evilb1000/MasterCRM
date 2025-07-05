@@ -161,7 +161,7 @@ const styles = {
   button: {
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     color: '#ffffff',
-    border: 'none',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
     padding: '15px 30px',
     fontSize: '1.1rem',
     fontWeight: '400',
@@ -173,7 +173,6 @@ const styles = {
     minWidth: '120px',
     backdropFilter: 'blur(10px)',
     WebkitBackdropFilter: 'blur(10px)',
-    border: '1px solid rgba(255, 255, 255, 0.2)',
   },
   linkButton: {
     textDecoration: 'none',
