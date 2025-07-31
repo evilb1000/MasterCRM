@@ -125,6 +125,7 @@ You are a CRM assistant that analyzes user requests and determines what they wan
 
 Available actions:
 - UPDATE_CONTACT: User wants to update existing contact information (edit, change, modify, set, update)
+- ADD_NOTE: User wants to add a note to an existing contact (add note, append note, include note)
 - CREATE_CONTACT: User wants to create a new contact
 - DELETE_CONTACT: User wants to delete a contact or contact field
 - SEARCH_CONTACT: User wants to find or search for contacts
@@ -143,6 +144,18 @@ IMPORTANT: For UPDATE_CONTACT, look for these patterns:
 - "[contact] [field] should be [value]"
 - "[contact] [field] is now [value]"
 
+IMPORTANT: For ADD_NOTE, look for these patterns:
+- "add note to [contact]: [note content]"
+- "add note for [contact]: [note content]"
+- "append note to [contact]: [note content]"
+- "include note for [contact]: [note content]"
+- "add [note content] to [contact]'s notes"
+- "[contact] note: [note content]"
+- "add note: [note content] for [contact]"
+- "note for [contact]: [note content]"
+- "add [note content] to [contact]"
+- "[contact] - [note content]"
+
 Contact identification can be by:
 - Email address (contains @)
 - Full name (firstName + lastName)
@@ -150,11 +163,11 @@ Contact identification can be by:
 
 Analyze the following user request and respond with ONLY a JSON object in this exact format:
 {
-  "intent": "UPDATE_CONTACT|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|GENERAL_QUERY",
+  "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|GENERAL_QUERY",
   "confidence": 0.0-1.0,
   "extractedData": {
     "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
-    "action": "update|create|delete|search|list|create_list",
+    "action": "update|add_note|create|delete|search|list|create_list",
     "field": "fieldName (if mentioned)",
     "value": "new value (if mentioned)",
     "query": "search terms (if searching)",
@@ -165,6 +178,12 @@ Analyze the following user request and respond with ONLY a JSON object in this e
 }
 
 If the request is unclear or doesn't match any action, set intent to GENERAL_QUERY and confidence to 0.0.
+
+Examples of ADD_NOTE commands:
+- "add note to John Smith: He prefers email communication"
+- "add note for john@example.com: Great follow-up candidate"
+- "John Smith note: Interested in new product line"
+- "add note: Loves coffee meetings for Elodie Wren"
 
 User request: "${command}"
 
@@ -201,8 +220,8 @@ Respond with ONLY the JSON object, no other text.`;
       });
     }
 
-    // Check confidence level - be more lenient for update commands
-    const minConfidence = intentAnalysis.intent === 'UPDATE_CONTACT' ? 0.2 : 0.3;
+    // Check confidence level - be more lenient for update and note commands
+    const minConfidence = (intentAnalysis.intent === 'UPDATE_CONTACT' || intentAnalysis.intent === 'ADD_NOTE') ? 0.2 : 0.3;
     console.log(`🔍 Confidence check: ${intentAnalysis.confidence} >= ${minConfidence} (${intentAnalysis.confidence >= minConfidence ? 'PASS' : 'FAIL'})`);
     
     if (intentAnalysis.confidence < minConfidence) {
@@ -223,6 +242,11 @@ Respond with ONLY the JSON object, no other text.`;
       case 'UPDATE_CONTACT':
         console.log('🔧 Handling UPDATE_CONTACT...');
         result = await handleContactUpdate(intentAnalysis.extractedData, command);
+        break;
+        
+      case 'ADD_NOTE':
+        console.log('🔧 Handling ADD_NOTE...');
+        result = await handleAddNote(intentAnalysis.extractedData, command);
         break;
         
       case 'CREATE_CONTACT':
@@ -480,6 +504,78 @@ async function handleContactUpdate(extractedData, originalCommand) {
     field: field,
     value: value,
     contactName: `${contact.data.firstName} ${contact.data.lastName}`
+  };
+}
+
+// Helper function to handle adding notes to contacts
+async function handleAddNote(extractedData, originalCommand) {
+  const { contactIdentifier, value } = extractedData;
+  
+  console.log('🔍 Add Note Debug:', { contactIdentifier, value });
+  
+  if (!contactIdentifier || !value) {
+    return {
+      success: false,
+      error: 'Missing required information for adding note. Please specify the contact and the note content.',
+      details: 'Incomplete note data',
+      debug: { contactIdentifier, value }
+    };
+  }
+
+  // Find the contact
+  console.log('🔍 Searching for contact with identifier:', contactIdentifier);
+  const contact = await findContact(contactIdentifier);
+  
+  if (!contact) {
+    return {
+      success: false,
+      error: `Contact not found with identifier: "${contactIdentifier}". Please check the contact details and try again.`,
+      details: `No contact found with identifier: ${contactIdentifier}`,
+      suggestion: 'Try using the contact\'s email address, full name, or company name.'
+    };
+  }
+
+  console.log('✅ Found contact:', contact.data.firstName, contact.data.lastName);
+
+  // Get current notes and append new note
+  const currentNotes = contact.data.notes || '';
+  const newNote = value.trim();
+  
+  // Combine notes with proper formatting
+  let updatedNotes;
+  if (currentNotes) {
+    // If there are existing notes, add a line break and the new note
+    updatedNotes = `${currentNotes}\n${newNote}`;
+  } else {
+    // If no existing notes, just use the new note
+    updatedNotes = newNote;
+  }
+
+  // Update the contact with the combined notes
+  try {
+    await contact.ref.update({ notes: updatedNotes });
+    console.log('✅ Note added successfully');
+  } catch (updateError) {
+    console.error('❌ Error adding note:', updateError);
+    return {
+      success: false,
+      error: 'Failed to add note. Please try again.',
+      details: 'Database update failed'
+    };
+  }
+
+  // Log the action
+  await logAction(originalCommand, 'add_note', contact.id, contact.data, 'notes', newNote);
+
+  return {
+    success: true,
+    message: `✅ Added note to ${contact.data.firstName} ${contact.data.lastName}: "${newNote}"`,
+    action: 'add_note',
+    contactId: contact.id,
+    field: 'notes',
+    value: newNote,
+    contactName: `${contact.data.firstName} ${contact.data.lastName}`,
+    totalNotes: updatedNotes
   };
 }
 
