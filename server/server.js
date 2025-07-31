@@ -936,12 +936,17 @@ app.use((error, req, res, next) => {
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📝 Chat endpoint available at http://localhost:${PORT}/chat`);
-  console.log(`🤖 AI Contact Action endpoint available at http://localhost:${PORT}/ai-contact-action`);
-  console.log(`📋 AI List Creation endpoint available at http://localhost:${PORT}/ai-create-list`);
-  console.log(`🔑 Make sure to set your OpenAI API key in the .env file`);
-  console.log(`🔥 Firebase Admin SDK ready for Firestore operations`);
-}); 
+// Export the app for Firebase Functions
+module.exports = app;
+
+// Start server only if not in Firebase Functions environment
+if (process.env.NODE_ENV !== 'production' || !process.env.FIREBASE_FUNCTIONS) {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`📝 Chat endpoint available at http://localhost:${PORT}/chat`);
+    console.log(`🤖 AI Contact Action endpoint available at http://localhost:${PORT}/ai-contact-action`);
+    console.log(`📋 AI List Creation endpoint available at http://localhost:${PORT}/ai-create-list`);
+    console.log(`🔑 Make sure to set your OpenAI API key in the .env file`);
+    console.log(`🔥 Firebase Admin SDK ready for Firestore operations`);
+  });
+} 

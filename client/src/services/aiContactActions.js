@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { ENDPOINTS } from '../config.js';
 
 /**
  * Handle AI Contact Actions
@@ -8,7 +9,7 @@ import axios from 'axios';
  * @returns {Promise<Object>} Response from the AI endpoint
  */
 export async function handleAIContactAction(message) {
-  const endpoint = 'http://localhost:3001/ai-contact-action';
+  const endpoint = ENDPOINTS.AI_CONTACT_ACTION;
   
   try {
     const response = await axios.post(endpoint, { 
@@ -32,7 +33,7 @@ export async function handleAIContactAction(message) {
       }
     } else if (error.request) {
       // Network error - server not running
-      throw new Error('Unable to connect to AI Contact Actions server. Please ensure the backend is running on localhost:3001');
+      throw new Error('Unable to connect to AI Contact Actions server. Please check your connection and try again.');
     } else {
       // Other error
       throw new Error(error.message || 'An unexpected error occurred');
@@ -48,7 +49,7 @@ export async function handleAIContactAction(message) {
  * @returns {Promise<Object>} Response from the AI endpoint
  */
 export async function handleAIListCreation(description) {
-  const endpoint = 'http://localhost:3001/ai-create-list';
+  const endpoint = ENDPOINTS.AI_CREATE_LIST;
   
   try {
     const response = await axios.post(endpoint, { 
@@ -72,7 +73,7 @@ export async function handleAIListCreation(description) {
       }
     } else if (error.request) {
       // Network error - server not running
-      throw new Error('Unable to connect to AI List Creation server. Please ensure the backend is running on localhost:3001');
+      throw new Error('Unable to connect to AI List Creation server. Please check your connection and try again.');
     } else {
       // Other error
       throw new Error(error.message || 'An unexpected error occurred');
