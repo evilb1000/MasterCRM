@@ -3,16 +3,32 @@ const cors = require('cors');
 const OpenAI = require('openai');
 require('dotenv').config();
 
+// Add global error handlers
+process.on('uncaughtException', (error) => {
+  console.error('🚨 UNCAUGHT EXCEPTION:', error);
+  console.error('🚨 Stack trace:', error.stack);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 UNHANDLED REJECTION at:', promise, 'reason:', reason);
+  console.error('🚨 Stack trace:', reason?.stack);
+});
+
 // Initialize Firebase Admin SDK
+console.log('🔧 Initializing Firebase Admin SDK...');
 const { admin, db } = require('./firebase');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Initialize OpenAI client
+console.log('🔧 Initializing OpenAI client...');
+console.log('🔧 API Key length:', process.env.OPENAI_API_KEY ? process.env.OPENAI_API_KEY.length : 0);
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+console.log('🔧 OpenAI client initialized');
 
 // Middleware
 app.use(cors());
@@ -939,14 +955,27 @@ app.use((error, req, res, next) => {
 // Export the app for Firebase Functions
 module.exports = app;
 
-// Start server only if not in Firebase Functions environment
-if (process.env.NODE_ENV !== 'production' || !process.env.FIREBASE_FUNCTIONS) {
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📝 Chat endpoint available at http://localhost:${PORT}/chat`);
-    console.log(`🤖 AI Contact Action endpoint available at http://localhost:${PORT}/ai-contact-action`);
-    console.log(`📋 AI List Creation endpoint available at http://localhost:${PORT}/ai-create-list`);
-    console.log(`🔑 Make sure to set your OpenAI API key in the .env file`);
-    console.log(`🔥 Firebase Admin SDK ready for Firestore operations`);
-  });
+// Start server for local development
+console.log('🔧 About to start server...');
+console.log('🔧 NODE_ENV:', process.env.NODE_ENV);
+console.log('🔧 PORT:', PORT);
+
+if (process.env.NODE_ENV !== 'production') {
+  console.log('🔧 Starting server in development mode...');
+  try {
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+      console.log(`📝 Chat endpoint available at http://localhost:${PORT}/chat`);
+      console.log(`🤖 AI Contact Action endpoint available at http://localhost:${PORT}/ai-contact-action`);
+      console.log(`📋 AI List Creation endpoint available at http://localhost:${PORT}/ai-create-list`);
+      console.log(`🔑 OpenAI API key: ${process.env.OPENAI_API_KEY ? '✅ Configured' : '❌ Missing'}`);
+      console.log(`🔥 Firebase Admin SDK ready for Firestore operations`);
+      console.log('✅ Server startup complete!');
+    });
+  } catch (error) {
+    console.error('🚨 Error starting server:', error);
+    console.error('🚨 Stack trace:', error.stack);
+  }
+} else {
+  console.log('🔧 Production mode - server not started (for Firebase Functions)');
 } 

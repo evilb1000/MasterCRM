@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { ENDPOINTS } from '../config.js';
 import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation } from '../services/aiContactActions';
 
 const isShowListsCommand = (msg) => {
@@ -98,7 +99,7 @@ const ChatBox = ({ onShowLists }) => {
       } else {
         console.log('💬 Routing to General Chat endpoint');
         // Use regular chat endpoint
-        const result = await axios.post('https://us-central1-lod-crm-systems.cloudfunctions.net/chat', {
+        const result = await axios.post(ENDPOINTS.CHAT, {
           message: message
         });
         
