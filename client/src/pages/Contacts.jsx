@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { collection, getDocs, query, orderBy, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import app from '../firebase';
+import axios from 'axios';
+import { ENDPOINTS } from '../config';
 import ContactModal from '../components/ContactModal';
 import CreateListModal from '../components/CreateListModal';
 
@@ -246,18 +248,59 @@ const Contacts = () => {
     setSelectedContactIds([]);
   };
 
-  const handleSaveList = async ({ name, contactIds }) => {
+  const handleSaveList = async ({ name, contactIds, connectToListing, selectedListing }) => {
     setListLoading(true);
     try {
-      await addDoc(collection(db, 'contactLists'), {
+      // Create the contact list
+      const listRef = await addDoc(collection(db, 'contactLists'), {
         name,
         contactIds,
         createdAt: serverTimestamp(),
       });
+
+      // If user wants to connect to a listing, do that now
+      if (connectToListing && selectedListing) {
+        try {
+          const response = await axios.post(ENDPOINTS.ADD_CONTACT_LIST_TO_LISTING, {
+            listingId: selectedListing.id,
+            contactListId: listRef.id
+          });
+
+          if (response.data.success) {
+            console.log('Successfully connected list to listing');
+          } else {
+            console.error('Failed to connect list to listing:', response.data.error);
+            // Don't fail the whole operation, just log the error
+          }
+        } catch (err) {
+          console.error('Error connecting list to listing:', err);
+          // Don't fail the whole operation, just log the error
+        }
+      }
+
       setListModalOpen(false);
       setListSelectionMode(false);
       setSelectedContactIds([]);
-      // Optionally show a success message or refresh lists
+      
+      // Show success message
+      if (connectToListing && selectedListing) {
+        const listingName = (() => {
+          if (selectedListing.name && selectedListing.name.trim()) {
+            return selectedListing.name;
+          } else if (selectedListing.address && selectedListing.address.trim()) {
+            return selectedListing.address;
+          } else if (selectedListing.streetAddress && selectedListing.streetAddress.trim()) {
+            return selectedListing.streetAddress;
+          } else if (selectedListing.title && selectedListing.title.trim()) {
+            return selectedListing.title;
+          } else {
+            return `Listing ${selectedListing.id.slice(-6)}`;
+          }
+        })();
+        alert(`List "${name}" created and connected to listing "${listingName}"`);
+      } else {
+        alert(`List "${name}" created successfully`);
+      }
     } catch (err) {
       alert('Failed to create list: ' + err.message);
     } finally {

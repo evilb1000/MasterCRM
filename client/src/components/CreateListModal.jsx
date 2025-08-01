@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
+import ListingSelector from './ListingSelector';
 
 const CreateListModal = ({ open, contacts, onClose, onSave, loading }) => {
   const [listName, setListName] = useState('');
   const [error, setError] = useState('');
+  const [connectToListing, setConnectToListing] = useState(false);
+  const [selectedListing, setSelectedListing] = useState(null);
+  const [listingSelectorOpen, setListingSelectorOpen] = useState(false);
 
   if (!open) return null;
 
@@ -16,7 +20,24 @@ const CreateListModal = ({ open, contacts, onClose, onSave, loading }) => {
       return;
     }
     setError('');
-    onSave({ name: listName.trim(), contactIds: contacts.map(c => c.id) });
+    onSave({ 
+      name: listName.trim(), 
+      contactIds: contacts.map(c => c.id),
+      connectToListing: connectToListing,
+      selectedListing: selectedListing
+    });
+  };
+
+  const handleListingSelect = (listing) => {
+    setSelectedListing(listing);
+    setListingSelectorOpen(false);
+  };
+
+  const handleConnectToListingChange = (checked) => {
+    setConnectToListing(checked);
+    if (!checked) {
+      setSelectedListing(null);
+    }
   };
 
   return (
@@ -51,6 +72,55 @@ const CreateListModal = ({ open, contacts, onClose, onSave, loading }) => {
             )}
           </div>
         </div>
+
+        <div style={styles.listingSection}>
+          <label style={styles.checkboxLabel}>
+            <input
+              type="checkbox"
+              checked={connectToListing}
+              onChange={(e) => handleConnectToListingChange(e.target.checked)}
+              style={styles.checkbox}
+            />
+            Connect this list to a listing
+          </label>
+          
+          {connectToListing && (
+            <div style={styles.listingSelector}>
+              {selectedListing ? (
+                <div style={styles.selectedListing}>
+                  <span style={styles.selectedListingName}>
+                    {(() => {
+                      if (selectedListing.name && selectedListing.name.trim()) {
+                        return selectedListing.name;
+                      } else if (selectedListing.address && selectedListing.address.trim()) {
+                        return selectedListing.address;
+                      } else if (selectedListing.streetAddress && selectedListing.streetAddress.trim()) {
+                        return selectedListing.streetAddress;
+                      } else if (selectedListing.title && selectedListing.title.trim()) {
+                        return selectedListing.title;
+                      } else {
+                        return `Listing ${selectedListing.id.slice(-6)}`;
+                      }
+                    })()}
+                  </span>
+                  <button
+                    onClick={() => setListingSelectorOpen(true)}
+                    style={styles.changeButton}
+                  >
+                    Change
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setListingSelectorOpen(true)}
+                  style={styles.selectButton}
+                >
+                  Select a Listing
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         {error && <div style={styles.error}>{error}</div>}
         <div style={styles.actions}>
           <button onClick={onClose} style={styles.cancelButton} disabled={loading}>
@@ -61,6 +131,13 @@ const CreateListModal = ({ open, contacts, onClose, onSave, loading }) => {
           </button>
         </div>
       </div>
+      
+      <ListingSelector
+        open={listingSelectorOpen}
+        onClose={() => setListingSelectorOpen(false)}
+        onSelect={handleListingSelect}
+        loading={loading}
+      />
     </div>
   );
 };
@@ -153,6 +230,63 @@ const styles = {
   contactEmail: {
     color: '#888',
     fontSize: '0.95em',
+  },
+  listingSection: {
+    marginBottom: '18px',
+    padding: '16px',
+    border: '1px solid #eee',
+    borderRadius: '8px',
+    background: '#fafafa',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '12px',
+    fontWeight: 500,
+    color: '#222',
+    cursor: 'pointer',
+  },
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
+  },
+  listingSelector: {
+    marginTop: '8px',
+  },
+  selectedListing: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 12px',
+    background: '#fff',
+    border: '1px solid #ddd',
+    borderRadius: '6px',
+  },
+  selectedListingName: {
+    fontWeight: 500,
+    color: '#222',
+  },
+  changeButton: {
+    background: 'rgba(0,0,0,0.1)',
+    color: '#222',
+    border: '1px solid #ccc',
+    borderRadius: '4px',
+    padding: '4px 8px',
+    fontSize: '0.9rem',
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+  },
+  selectButton: {
+    background: 'rgba(0,0,0,0.8)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '8px 16px',
+    fontSize: '1rem',
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
   },
   error: {
     color: '#b71c1c',
