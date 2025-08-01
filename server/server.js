@@ -955,12 +955,14 @@ app.use((error, req, res, next) => {
 // Export the app for Firebase Functions
 module.exports = app;
 
-// Start server for local development
+// Start server for local development only
 console.log('🔧 About to start server...');
 console.log('🔧 NODE_ENV:', process.env.NODE_ENV);
 console.log('🔧 PORT:', PORT);
+console.log('🔧 FIREBASE_FUNCTIONS:', process.env.FIREBASE_FUNCTIONS);
 
-if (process.env.NODE_ENV !== 'production') {
+// Only start server if we're in development AND not in Firebase Functions environment
+if (process.env.NODE_ENV !== 'production' && !process.env.FIREBASE_FUNCTIONS) {
   console.log('🔧 Starting server in development mode...');
   try {
     app.listen(PORT, () => {
@@ -977,5 +979,5 @@ if (process.env.NODE_ENV !== 'production') {
     console.error('🚨 Stack trace:', error.stack);
   }
 } else {
-  console.log('🔧 Production mode - server not started (for Firebase Functions)');
+  console.log('🔧 Production/Firebase Functions mode - server not started');
 } 
