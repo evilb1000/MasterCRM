@@ -4,7 +4,7 @@ const isProduction = import.meta.env.PROD;
 
 // API base URL configuration
 export const API_BASE_URL = isDevelopment 
-  ? 'http://localhost:3004' 
+  ? 'http://localhost:3003' 
   : 'https://us-central1-lod-crm-systems.cloudfunctions.net/api';
 
 // API endpoints
@@ -13,7 +13,13 @@ export const ENDPOINTS = {
   AI_CREATE_LIST: `${API_BASE_URL}/ai-create-list`,
   CHAT: `${API_BASE_URL}/chat`,
   ADD_CONTACT_LIST_TO_LISTING: `${API_BASE_URL}/add-contact-list-to-listing`,
-  GET_LISTINGS: `${API_BASE_URL}/listings`
+  GET_LISTINGS: `${API_BASE_URL}/listings`,
+  // Activities endpoints
+  CREATE_ACTIVITY: `${API_BASE_URL}/activities`,
+  GET_ACTIVITIES: `${API_BASE_URL}/activities`,
+  GET_CONTACT_ACTIVITIES: `${API_BASE_URL}/activities/contact`,
+  UPDATE_ACTIVITY: `${API_BASE_URL}/activities`,
+  DELETE_ACTIVITY: `${API_BASE_URL}/activities`
 };
 
 export default {

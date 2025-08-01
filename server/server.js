@@ -155,6 +155,7 @@ You are a CRM assistant that analyzes user requests and determines what they wan
 Available actions:
 - UPDATE_CONTACT: User wants to update existing contact information (edit, change, modify, set, update)
 - ADD_NOTE: User wants to add a note to an existing contact (add note, append note, include note)
+- CREATE_ACTIVITY: User wants to log an activity for a contact (called, emailed, met with, texted, showed property to)
 - CREATE_CONTACT: User wants to create a new contact
 - DELETE_CONTACT: User wants to delete a contact or contact field
 - SEARCH_CONTACT: User wants to find or search for contacts
@@ -185,6 +186,16 @@ IMPORTANT: For ADD_NOTE, look for these patterns:
 - "add [note content] to [contact]"
 - "[contact] - [note content]"
 
+IMPORTANT: For CREATE_ACTIVITY, look for these patterns:
+- "called [contact]" or "called [contact] about [description]"
+- "emailed [contact]" or "emailed [contact] about [description]"
+- "met with [contact]" or "met with [contact] about [description]"
+- "texted [contact]" or "texted [contact] about [description]"
+- "showed property to [contact]" or "showed [contact] the property"
+- "followed up with [contact]" or "follow up with [contact]"
+- "[contact] called me" or "[contact] emailed me"
+- "had a [type] with [contact]" where type is call/email/meeting/text/showing
+
 Contact identification can be by:
 - Email address (contains @)
 - Full name (firstName + lastName)
@@ -192,13 +203,15 @@ Contact identification can be by:
 
 Analyze the following user request and respond with ONLY a JSON object in this exact format:
 {
-  "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|GENERAL_QUERY",
+  "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|GENERAL_QUERY",
   "confidence": 0.0-1.0,
   "extractedData": {
     "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
-    "action": "update|add_note|create|delete|search|list|create_list",
+    "action": "update|add_note|create_activity|create|delete|search|list|create_list",
     "field": "fieldName (if mentioned)",
     "value": "new value (if mentioned)",
+    "activityType": "call|email|meeting|text|showing|follow_up|other (if creating activity)",
+    "activityDescription": "description of the activity (if creating activity)",
     "query": "search terms (if searching)",
     "listName": "suggested list name (if creating list)",
     "listCriteria": "description of what contacts to include in the list"
@@ -276,6 +289,11 @@ Respond with ONLY the JSON object, no other text.`;
       case 'ADD_NOTE':
         console.log('🔧 Handling ADD_NOTE...');
         result = await handleAddNote(intentAnalysis.extractedData, command);
+        break;
+        
+      case 'CREATE_ACTIVITY':
+        console.log('🔧 Handling CREATE_ACTIVITY...');
+        result = await handleCreateActivity(intentAnalysis.extractedData, command);
         break;
         
       case 'CREATE_CONTACT':
@@ -606,6 +624,82 @@ async function handleAddNote(extractedData, originalCommand) {
     contactName: `${contact.data.firstName} ${contact.data.lastName}`,
     totalNotes: updatedNotes
   };
+}
+
+// Helper function to handle activity creation
+async function handleCreateActivity(extractedData, originalCommand) {
+  const { contactIdentifier, activityType, activityDescription } = extractedData;
+  
+  if (!contactIdentifier) {
+    return {
+      success: false,
+      error: 'Please specify which contact this activity is for.',
+      details: 'Missing contact identifier'
+    };
+  }
+
+  if (!activityType) {
+    return {
+      success: false,
+      error: 'Please specify the type of activity (call, email, meeting, etc.).',
+      details: 'Missing activity type'
+    };
+  }
+
+  // Find the contact
+  const contact = await findContact(contactIdentifier);
+  if (!contact) {
+    return {
+      success: false,
+      error: 'Contact not found. Please check the contact details and try again.',
+      details: `No contact found with identifier: ${contactIdentifier}`
+    };
+  }
+
+  // Create activity data
+  const activityData = {
+    contactId: contact.id,
+    type: activityType,
+    description: activityDescription || `Activity with ${contact.data.firstName} ${contact.data.lastName}`,
+    date: new Date(),
+    duration: null,
+    notes: '',
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+
+  // Save to Firestore
+  try {
+    const activityRef = await db.collection('activities').add(activityData);
+    console.log('✅ Activity created successfully:', {
+      activityId: activityRef.id,
+      contactId: contact.id,
+      type: activityType,
+      description: activityData.description
+    });
+
+    // Log the action
+    await logAction(originalCommand, 'create_activity', contact.id, contact.data, 'activity', activityType);
+
+    return {
+      success: true,
+      message: `✅ Logged ${activityType} activity for ${contact.data.firstName} ${contact.data.lastName}`,
+      action: 'create_activity',
+      contactId: contact.id,
+      activityId: activityRef.id,
+      activityType: activityType,
+      description: activityData.description,
+      contactName: `${contact.data.firstName} ${contact.data.lastName}`
+    };
+
+  } catch (error) {
+    console.error('❌ Error creating activity:', error);
+    return {
+      success: false,
+      error: 'Failed to create activity. Please try again.',
+      details: 'Database operation failed'
+    };
+  }
 }
 
 // Helper function to handle contact creation
@@ -1053,6 +1147,283 @@ app.get('/listings', async (req, res) => {
     console.error('Error fetching listings:', error);
     res.status(500).json({
       error: 'Failed to fetch listings',
+      details: error.message
+    });
+  }
+});
+
+// ===== ACTIVITIES ENDPOINTS =====
+
+// Create a new activity for a contact
+app.post('/activities', async (req, res) => {
+  try {
+    const { contactId, type, description, date, duration, notes } = req.body;
+
+    // Validate required fields
+    if (!contactId || !type || !description) {
+      return res.status(400).json({
+        error: 'Missing required fields: contactId, type, and description are required'
+      });
+    }
+
+    // Validate activity type
+    const validTypes = ['call', 'email', 'meeting', 'text', 'note', 'showing', 'follow_up', 'other'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({
+        error: `Invalid activity type. Must be one of: ${validTypes.join(', ')}`
+      });
+    }
+
+    // Verify the contact exists
+    const contactRef = db.collection('contacts').doc(contactId);
+    const contactDoc = await contactRef.get();
+
+    if (!contactDoc.exists) {
+      return res.status(404).json({
+        error: 'Contact not found'
+      });
+    }
+
+    // Create activity data
+    const activityData = {
+      contactId: contactId,
+      type: type,
+      description: description,
+      date: date ? new Date(date) : new Date(),
+      duration: duration || null,
+      notes: notes || '',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    // Save to Firestore
+    const activityRef = await db.collection('activities').add(activityData);
+    
+    console.log('✅ Activity created successfully:', {
+      activityId: activityRef.id,
+      contactId: contactId,
+      type: type,
+      description: description
+    });
+
+    res.json({
+      success: true,
+      message: 'Activity created successfully',
+      activityId: activityRef.id,
+      activity: {
+        id: activityRef.id,
+        ...activityData
+      }
+    });
+
+  } catch (error) {
+    console.error('Error creating activity:', error);
+    res.status(500).json({
+      error: 'Failed to create activity',
+      details: error.message
+    });
+  }
+});
+
+// Get all activities for a specific contact
+app.get('/activities/contact/:contactId', async (req, res) => {
+  try {
+    const { contactId } = req.params;
+
+    // Validate contactId
+    if (!contactId) {
+      return res.status(400).json({
+        error: 'Contact ID is required'
+      });
+    }
+
+    // Verify the contact exists
+    const contactRef = db.collection('contacts').doc(contactId);
+    const contactDoc = await contactRef.get();
+
+    if (!contactDoc.exists) {
+      return res.status(404).json({
+        error: 'Contact not found'
+      });
+    }
+
+    // Get activities for this contact
+    const activitiesRef = db.collection('activities');
+    const querySnapshot = await activitiesRef
+      .where('contactId', '==', contactId)
+      .orderBy('date', 'desc')
+      .get();
+
+    const activities = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    console.log(`✅ Retrieved ${activities.length} activities for contact ${contactId}`);
+
+    res.json({
+      success: true,
+      activities: activities,
+      count: activities.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching activities:', error);
+    res.status(500).json({
+      error: 'Failed to fetch activities',
+      details: error.message
+    });
+  }
+});
+
+// Get all activities (with optional filtering)
+app.get('/activities', async (req, res) => {
+  try {
+    const { type, limit = 50, offset = 0 } = req.query;
+
+    let query = db.collection('activities').orderBy('date', 'desc');
+
+    // Apply type filter if provided
+    if (type) {
+      const validTypes = ['call', 'email', 'meeting', 'text', 'note', 'showing', 'follow_up', 'other'];
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({
+          error: `Invalid activity type. Must be one of: ${validTypes.join(', ')}`
+        });
+      }
+      query = query.where('type', '==', type);
+    }
+
+    // Apply limit and offset
+    query = query.limit(parseInt(limit)).offset(parseInt(offset));
+
+    const querySnapshot = await query.get();
+
+    const activities = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    console.log(`✅ Retrieved ${activities.length} activities`);
+
+    res.json({
+      success: true,
+      activities: activities,
+      count: activities.length,
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+  } catch (error) {
+    console.error('Error fetching activities:', error);
+    res.status(500).json({
+      error: 'Failed to fetch activities',
+      details: error.message
+    });
+  }
+});
+
+// Update an activity
+app.put('/activities/:activityId', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+    const { type, description, date, duration, notes } = req.body;
+
+    // Validate activityId
+    if (!activityId) {
+      return res.status(400).json({
+        error: 'Activity ID is required'
+      });
+    }
+
+    // Check if activity exists
+    const activityRef = db.collection('activities').doc(activityId);
+    const activityDoc = await activityRef.get();
+
+    if (!activityDoc.exists) {
+      return res.status(404).json({
+        error: 'Activity not found'
+      });
+    }
+
+    // Validate activity type if provided
+    if (type) {
+      const validTypes = ['call', 'email', 'meeting', 'text', 'note', 'showing', 'follow_up', 'other'];
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({
+          error: `Invalid activity type. Must be one of: ${validTypes.join(', ')}`
+        });
+      }
+    }
+
+    // Prepare update data
+    const updateData = {
+      updatedAt: new Date()
+    };
+
+    if (type) updateData.type = type;
+    if (description) updateData.description = description;
+    if (date) updateData.date = new Date(date);
+    if (duration !== undefined) updateData.duration = duration;
+    if (notes !== undefined) updateData.notes = notes;
+
+    // Update the activity
+    await activityRef.update(updateData);
+
+    console.log('✅ Activity updated successfully:', activityId);
+
+    res.json({
+      success: true,
+      message: 'Activity updated successfully',
+      activityId: activityId
+    });
+
+  } catch (error) {
+    console.error('Error updating activity:', error);
+    res.status(500).json({
+      error: 'Failed to update activity',
+      details: error.message
+    });
+  }
+});
+
+// Delete an activity
+app.delete('/activities/:activityId', async (req, res) => {
+  try {
+    const { activityId } = req.params;
+
+    // Validate activityId
+    if (!activityId) {
+      return res.status(400).json({
+        error: 'Activity ID is required'
+      });
+    }
+
+    // Check if activity exists
+    const activityRef = db.collection('activities').doc(activityId);
+    const activityDoc = await activityRef.get();
+
+    if (!activityDoc.exists) {
+      return res.status(404).json({
+        error: 'Activity not found'
+      });
+    }
+
+    // Delete the activity
+    await activityRef.delete();
+
+    console.log('✅ Activity deleted successfully:', activityId);
+
+    res.json({
+      success: true,
+      message: 'Activity deleted successfully',
+      activityId: activityId
+    });
+
+  } catch (error) {
+    console.error('Error deleting activity:', error);
+    res.status(500).json({
+      error: 'Failed to delete activity',
       details: error.message
     });
   }

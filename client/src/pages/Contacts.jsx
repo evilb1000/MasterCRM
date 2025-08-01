@@ -7,6 +7,7 @@ import axios from 'axios';
 import { ENDPOINTS } from '../config';
 import ContactModal from '../components/ContactModal';
 import CreateListModal from '../components/CreateListModal';
+import AddActivityModal from '../components/AddActivityModal';
 
 const Contacts = () => {
   console.log('Contacts component rendering');
@@ -30,6 +31,9 @@ const Contacts = () => {
 
   const [listModalOpen, setListModalOpen] = useState(false);
   const [listLoading, setListLoading] = useState(false);
+
+  const [activityModalOpen, setActivityModalOpen] = useState(false);
+  const [activityModalContact, setActivityModalContact] = useState(null);
 
   const [listSelectionMode, setListSelectionMode] = useState(false);
   const [selectedContactIds, setSelectedContactIds] = useState([]);
@@ -246,6 +250,24 @@ const Contacts = () => {
     setListModalOpen(false);
     setListSelectionMode(false);
     setSelectedContactIds([]);
+  };
+
+  const handleOpenActivityModal = (contact) => {
+    setActivityModalContact(contact);
+    setActivityModalOpen(true);
+  };
+
+  const handleCloseActivityModal = () => {
+    setActivityModalOpen(false);
+    setActivityModalContact(null);
+  };
+
+  const handleActivityAdded = () => {
+    // Refresh the contact modal if it's open to show the new activity
+    if (modalOpen && modalContact) {
+      // This will trigger a refresh of the activities in the contact modal
+      setModalContact({ ...modalContact });
+    }
   };
 
   const handleSaveList = async ({ name, contactIds, connectToListing, selectedListing }) => {
@@ -529,24 +551,18 @@ const Contacts = () => {
                         )}
                       </div>
                       <div style={styles.contactDetails}>
-                        {contact.email && (
-                          <div style={styles.contactItem}>
-                            <span style={styles.contactLabel}>Email:</span>
-                            <span style={styles.contactLink}>{contact.email}</span>
-                          </div>
-                        )}
-                        {contact.phone && (
-                          <div style={styles.contactItem}>
-                            <span style={styles.contactLabel}>Phone:</span>
-                            <span style={styles.contactLink}>{formatPhone(contact.phone)}</span>
-                          </div>
-                        )}
-                        {contact.businessSector && (
-                          <div style={styles.contactItem}>
-                            <span style={styles.contactLabel}>Sector:</span>
-                            <span style={styles.contactText}>{contact.businessSector}</span>
-                          </div>
-                        )}
+                        <div style={styles.contactItem}>
+                          <span style={styles.contactLabel}>Email:</span>
+                          <span style={styles.contactLink}>{contact.email || 'Unknown'}</span>
+                        </div>
+                        <div style={styles.contactItem}>
+                          <span style={styles.contactLabel}>Phone:</span>
+                          <span style={styles.contactLink}>{contact.phone ? formatPhone(contact.phone) : 'Unknown'}</span>
+                        </div>
+                        <div style={styles.contactItem}>
+                          <span style={styles.contactLabel}>Sector:</span>
+                          <span style={styles.contactText}>{contact.businessSector || 'Unknown'}</span>
+                        </div>
                         {contact.createdAt && (
                           <div style={styles.contactItem}>
                             <span style={styles.contactLabel}>Added:</span>
@@ -559,6 +575,7 @@ const Contacts = () => {
                       <div style={styles.contactActions}>
                         <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleOpenModal(contact, 'edit'); }}>Edit</button>
                         <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleOpenModal(contact, 'view'); }}>Details</button>
+                        <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleOpenActivityModal(contact); }}>Add Activity</button>
                       </div>
                     </div>
                   );
@@ -581,6 +598,12 @@ const Contacts = () => {
         onClose={handleCloseListModal}
         onSave={handleSaveList}
         loading={listLoading}
+      />
+      <AddActivityModal
+        open={activityModalOpen}
+        contact={activityModalContact}
+        onClose={handleCloseActivityModal}
+        onActivityAdded={handleActivityAdded}
       />
     </div>
   );

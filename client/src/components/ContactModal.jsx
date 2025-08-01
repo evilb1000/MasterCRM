@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { firebase } from '../firebase';
+import { getContactActivities } from '../services/activitiesService';
 
 const SECTOR_OPTIONS = [
   '',
@@ -37,21 +38,16 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
       try {
         console.log('Fetching activities for contact:', contact.id);
         
-        // Query activities by contactId
-        const querySnapshot = await firebase.firestore()
-          .collection("activities")
-          .where("contactId", "==", contact.id)
-          .orderBy("timestamp", "desc")
-          .get();
+        // Use API endpoint to fetch activities
+        const response = await getContactActivities(contact.id);
         
-        console.log('Contact activities found:', querySnapshot.docs.length);
-        
-        const activitiesData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }));
-        
-        setContactActivities(activitiesData);
+        if (response.success) {
+          console.log('Contact activities found:', response.activities.length);
+          setContactActivities(response.activities);
+        } else {
+          console.error('Failed to fetch activities:', response.error);
+          setContactActivities([]);
+        }
       } catch (err) {
         console.error('Error fetching contact activities:', err);
         setContactActivities([]);
@@ -163,15 +159,19 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
       transition: 'background 0.2s',
     },
     activitiesSection: {
-      marginTop: 10,
-      maxHeight: '200px',
+      marginTop: 20,
+      maxHeight: '300px',
       overflowY: 'auto',
+      borderTop: '2px solid #e0e0e0',
+      paddingTop: 15,
     },
     activitiesTitle: {
-      fontSize: '1.2rem',
+      fontSize: '1.3rem',
       fontWeight: 600,
-      marginBottom: 8,
+      marginBottom: 12,
       color: '#222',
+      borderBottom: '1px solid #ddd',
+      paddingBottom: 8,
     },
     activitiesLoading: {
       color: '#222',
@@ -190,19 +190,36 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
       padding: 0,
     },
     activityItem: {
-      marginBottom: 6,
-      padding: '4px 0',
+      marginBottom: 12,
+      padding: '8px 12px',
+      border: '1px solid #e0e0e0',
+      borderRadius: 6,
+      background: 'rgba(255,255,255,0.8)',
+    },
+    activityHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 4,
     },
     activityType: {
-      fontWeight: 500,
-      color: '#222',
+      fontWeight: 600,
+      color: '#2c5aa0',
       fontSize: '0.9rem',
+      textTransform: 'capitalize',
     },
-    activityNotes: {
+    activityDescription: {
       color: '#444',
       fontSize: '0.85rem',
       fontFamily: 'Georgia, serif',
       wordBreak: 'break-word',
+      marginBottom: 2,
+    },
+    activityDuration: {
+      color: '#666',
+      fontSize: '0.75rem',
+      fontFamily: 'Georgia, serif',
+      fontStyle: 'italic',
     },
     activityTimestamp: {
       color: '#666',
@@ -263,9 +280,9 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
               onChange={v => handleChange('address', v)}
             />
             {/* Business Sector */}
-            <div style={fieldStyles.fieldRow}>
-              <label style={fieldStyles.label}>Business Sector:</label>
-              {mode === 'edit' ? (
+            {mode === 'edit' ? (
+              <div style={fieldStyles.fieldRow}>
+                <label style={fieldStyles.label}>Business Sector:</label>
                 <select
                   style={fieldStyles.input}
                   value={editContact.businessSector || ''}
@@ -275,9 +292,18 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
                     <option key={opt} value={opt}>{opt || 'Select sector...'}</option>
                   ))}
                 </select>
-              ) : (
-                <span style={fieldStyles.value}>{editContact.businessSector || ''}</span>
-              )}
+              </div>
+            ) : (
+              <ModalField
+                label="Business Sector"
+                value={editContact.businessSector || ''}
+                mode={mode}
+                onChange={v => handleChange('businessSector', v)}
+              />
+            )}
+            {/* Debug info */}
+            <div style={{fontSize: '10px', color: 'red', marginTop: '5px'}}>
+              Debug: mode = "{mode}", businessSector = "{editContact.businessSector}" (type: {typeof editContact.businessSector})
             </div>
             {/* Company */}
             <ModalField
@@ -362,14 +388,28 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
                   <ul style={styles.activitiesList}>
                     {contactActivities.map(activity => (
                       <li key={activity.id} style={styles.activityItem}>
-                        <div style={styles.activityType}>{activity.type || 'Activity'}</div>
-                        <div style={styles.activityNotes}>{activity.notes || 'No notes'}</div>
-                        <div style={styles.activityTimestamp}>
-                          {activity.timestamp?.toDate?.() ? 
-                            activity.timestamp.toDate().toLocaleDateString() : 
-                            'Unknown date'
-                          }
+                        <div style={styles.activityHeader}>
+                          <span style={styles.activityType}>
+                            {activity.type ? activity.type.charAt(0).toUpperCase() + activity.type.slice(1) : 'Activity'}
+                          </span>
+                          <span style={styles.activityTimestamp}>
+                            {activity.date?._seconds ? 
+                               new Date(activity.date._seconds * 1000).toLocaleDateString() : 
+                               activity.timestamp?.toDate?.() ? 
+                                 activity.timestamp.toDate().toLocaleDateString() : 
+                                 activity.date ? new Date(activity.date).toLocaleDateString() : 
+                                 'Unknown date'
+                            }
+                          </span>
                         </div>
+                        <div style={styles.activityDescription}>
+                          {activity.description || 'No description'}
+                        </div>
+                        {activity.duration && (
+                          <div style={styles.activityDuration}>
+                            Duration: {activity.duration} minutes
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -407,7 +447,7 @@ const ModalField = ({ label, value, mode, onChange, textarea }) => (
         />
       )
     ) : (
-      <span style={fieldStyles.value}>{value}</span>
+      <span style={fieldStyles.value}>{value && value.trim() ? value : '(Not specified)'}</span>
     )}
   </div>
 );
