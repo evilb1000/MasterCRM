@@ -24,6 +24,7 @@ const Listings = () => {
   const [contactActivities, setContactActivities] = useState([]);
   const [contactActivitiesLoading, setContactActivitiesLoading] = useState(false);
 
+
   useEffect(() => {
     const fetchListings = async () => {
       try {
@@ -86,21 +87,41 @@ const Listings = () => {
       
       setActivitiesLoading(true);
       try {
-        console.log('Fetching activities for listing:', selectedListing.id);
-        
-        // Use the exact query structure as specified
+        // Query for activities connected to this listing
         const querySnapshot = await firebase.firestore()
           .collection("activities")
           .where("listingId", "==", selectedListing.id)
-          .where("type", "==", "tour")
-          .orderBy("timestamp", "asc")
+          .orderBy("date", "desc")
           .get();
         
-        console.log('Activities found:', querySnapshot.docs.length);
-        
-        const activitiesData = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
+        const activitiesData = await Promise.all(querySnapshot.docs.map(async doc => {
+          const data = doc.data();
+          
+          // Fetch contact name if contactId exists
+          let contactName = 'Unknown Contact';
+          if (data.contactId) {
+            try {
+              const contactDoc = await firebase.firestore()
+                .collection('contacts')
+                .doc(data.contactId)
+                .get();
+              
+              if (contactDoc.exists) {
+                const contactData = contactDoc.data();
+                contactName = contactData.firstName && contactData.lastName 
+                  ? `${contactData.firstName} ${contactData.lastName}`
+                  : contactData.firstName || contactData.lastName || 'Unnamed Contact';
+              }
+            } catch (err) {
+              console.error('Error fetching contact name:', err);
+            }
+          }
+          
+          return {
+            id: doc.id,
+            ...data,
+            contactName
+          };
         }));
         
         setActivities(activitiesData);
@@ -354,16 +375,17 @@ const Listings = () => {
                   )}
                 </div>
                 <div style={styles.activitiesSection}>
-                  <div style={styles.activitiesTitle}>Tour Activities</div>
+                  <div style={styles.activitiesTitle}>Listing Activities</div>
                   {activitiesLoading ? (
                     <div style={styles.activitiesLoading}>Loading activities...</div>
                   ) : activities.length === 0 ? (
-                    <div style={styles.activitiesEmpty}>No tour activities for this listing.</div>
+                    <div style={styles.activitiesEmpty}>No activities for this listing.</div>
                   ) : (
                     <ul style={styles.activitiesList}>
                       {activities.map(activity => (
                         <li key={activity.id} style={styles.activityItem}>
                           <button
+                            className="activity-button"
                             style={styles.activityButton}
                             onClick={async () => {
                               if (!activity.contactId) return;
@@ -379,10 +401,16 @@ const Listings = () => {
                               }
                             }}
                           >
-                            <div style={styles.activityNotes}>{activity.notes || 'No notes'}</div>
+                            <div style={styles.activityContact}>
+                              <strong>{activity.contactName || 'Unknown Contact'}</strong>
+                            </div>
+                            <div style={styles.activityNotes}>
+                              <strong>{activity.type || 'Activity'}</strong>: {activity.description || 'No description'}
+                            </div>
                             <div style={styles.activityTimestamp}>
-                              {activity.timestamp?.toDate?.() ? 
-                                activity.timestamp.toDate().toLocaleDateString() : 
+                              {activity.date?.toDate?.() ? 
+                                activity.date.toDate().toLocaleDateString() : 
+                                activity.date ? new Date(activity.date).toLocaleDateString() :
                                 'Unknown date'
                               }
                             </div>
@@ -887,14 +915,29 @@ const styles = {
   activityButton: {
     background: 'none',
     border: 'none',
-    padding: 0,
+    padding: '4px 8px',
     cursor: 'pointer',
     textAlign: 'left',
     width: '100%',
+    borderRadius: '4px',
+    outline: 'none',
+    userSelect: 'none',
+  },
+  activityButtonHover: {
+    backgroundColor: '#f8f9fa !important',
+    transform: 'none !important',
+    boxShadow: 'none !important',
+    borderColor: 'transparent !important',
   },
   activityNotes: {
     fontWeight: 500,
     color: '#1a237e',
+  },
+  activityContact: {
+    fontWeight: 600,
+    color: '#333',
+    fontSize: '1rem',
+    marginBottom: '2px',
   },
   activityTimestamp: {
     fontSize: '0.9rem',

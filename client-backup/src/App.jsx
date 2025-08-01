@@ -165,11 +165,26 @@ const styles = {
 // Add hover effects
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
-  button:hover {
+  button:hover:not(.activity-button) {
     background-color: rgba(0, 0, 0, 0.9) !important;
     transform: translateY(-2px);
     box-shadow: 0 8px 25px rgba(0,0,0,0.3);
     border-color: rgba(255, 255, 255, 0.4);
+  }
+  
+  .activity-button:hover {
+    background-color: #f8f9fa !important;
+    transform: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+  }
+  
+  .activity-button:focus {
+    background-color: #f8f9fa !important;
+    transform: none !important;
+    box-shadow: none !important;
+    border-color: transparent !important;
+    outline: none !important;
   }
   
   button:active {

@@ -1157,7 +1157,7 @@ app.get('/listings', async (req, res) => {
 // Create a new activity for a contact
 app.post('/activities', async (req, res) => {
   try {
-    const { contactId, type, description, date, duration, notes } = req.body;
+    const { contactId, type, description, date, duration, notes, connectToListing, selectedListing } = req.body;
 
     // Validate required fields
     if (!contactId || !type || !description) {
@@ -1196,6 +1196,24 @@ app.post('/activities', async (req, res) => {
       updatedAt: new Date()
     };
 
+    // Add listing connection if requested
+    if (connectToListing && selectedListing) {
+      activityData.listingId = selectedListing.id;
+      activityData.listingName = (() => {
+        if (selectedListing.name && selectedListing.name.trim()) {
+          return selectedListing.name;
+        } else if (selectedListing.address && selectedListing.address.trim()) {
+          return selectedListing.address;
+        } else if (selectedListing.streetAddress && selectedListing.streetAddress.trim()) {
+          return selectedListing.streetAddress;
+        } else if (selectedListing.title && selectedListing.title.trim()) {
+          return selectedListing.title;
+        } else {
+          return `Listing ${selectedListing.id.slice(-6)}`;
+        }
+      })();
+    }
+
     // Save to Firestore
     const activityRef = await db.collection('activities').add(activityData);
     
@@ -1203,8 +1221,33 @@ app.post('/activities', async (req, res) => {
       activityId: activityRef.id,
       contactId: contactId,
       type: type,
-      description: description
+      description: description,
+      listingId: activityData.listingId || null
     });
+
+    // If connected to a listing, also add to listing activities
+    if (connectToListing && selectedListing) {
+      try {
+        const listingActivitiesRef = db.collection('listingActivities');
+        await listingActivitiesRef.add({
+          listingId: selectedListing.id,
+          activityId: activityRef.id,
+          contactId: contactId,
+          type: type,
+          description: description,
+          date: activityData.date,
+          createdAt: new Date()
+        });
+        
+        console.log('✅ Activity connected to listing:', {
+          listingId: selectedListing.id,
+          activityId: activityRef.id
+        });
+      } catch (listingError) {
+        console.error('❌ Error connecting activity to listing:', listingError);
+        // Don't fail the whole operation, just log the error
+      }
+    }
 
     res.json({
       success: true,

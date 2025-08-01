@@ -1,10 +1,14 @@
 import React, { useState } from 'react';
 import { createActivity } from '../services/activitiesService';
+import ListingSelector from './ListingSelector';
 
 const AddActivityModal = ({ open, onClose, contact, onActivityAdded }) => {
   const [activityType, setActivityType] = useState('call');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
+  const [connectToListing, setConnectToListing] = useState(false);
+  const [selectedListing, setSelectedListing] = useState(null);
+  const [listingSelectorOpen, setListingSelectorOpen] = useState(false);
 
   const activityTypes = [
     { value: 'call', label: 'Phone Call' },
@@ -29,7 +33,9 @@ const AddActivityModal = ({ open, onClose, contact, onActivityAdded }) => {
         contactId: contact.id,
         type: activityType,
         description: description.trim(),
-        date: new Date().toISOString()
+        date: new Date().toISOString(),
+        connectToListing: connectToListing,
+        selectedListing: selectedListing
       };
 
       const result = await createActivity(activityData);
@@ -52,7 +58,21 @@ const AddActivityModal = ({ open, onClose, contact, onActivityAdded }) => {
     setActivityType('call');
     setDescription('');
     setLoading(false);
+    setConnectToListing(false);
+    setSelectedListing(null);
     onClose();
+  };
+
+  const handleListingSelect = (listing) => {
+    setSelectedListing(listing);
+    setListingSelectorOpen(false);
+  };
+
+  const handleConnectToListingChange = (checked) => {
+    setConnectToListing(checked);
+    if (!checked) {
+      setSelectedListing(null);
+    }
   };
 
   if (!open || !contact) return null;
@@ -99,7 +119,56 @@ const AddActivityModal = ({ open, onClose, contact, onActivityAdded }) => {
               />
             </div>
 
-
+            <div style={styles.listingSection}>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={connectToListing}
+                  onChange={(e) => handleConnectToListingChange(e.target.checked)}
+                  style={styles.checkbox}
+                />
+                Connect this activity to a listing
+              </label>
+              
+              {connectToListing && (
+                <div style={styles.listingSelector}>
+                  {selectedListing ? (
+                    <div style={styles.selectedListing}>
+                      <span style={styles.selectedListingName}>
+                        {(() => {
+                          if (selectedListing.name && selectedListing.name.trim()) {
+                            return selectedListing.name;
+                          } else if (selectedListing.address && selectedListing.address.trim()) {
+                            return selectedListing.address;
+                          } else if (selectedListing.streetAddress && selectedListing.streetAddress.trim()) {
+                            return selectedListing.streetAddress;
+                          } else if (selectedListing.title && selectedListing.title.trim()) {
+                            return selectedListing.title;
+                          } else {
+                            return `Listing ${selectedListing.id.slice(-6)}`;
+                          }
+                        })()}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setListingSelectorOpen(true)}
+                        style={styles.changeButton}
+                      >
+                        Change
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setListingSelectorOpen(true)}
+                      style={styles.selectButton}
+                    >
+                      Select a Listing
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div style={styles.actions}>
               <button
@@ -121,6 +190,13 @@ const AddActivityModal = ({ open, onClose, contact, onActivityAdded }) => {
           </form>
         </div>
       </div>
+      
+      <ListingSelector
+        open={listingSelectorOpen}
+        onClose={() => setListingSelectorOpen(false)}
+        onSelect={handleListingSelect}
+        loading={loading}
+      />
     </div>
   );
 };
@@ -221,6 +297,64 @@ const styles = {
     fontSize: '14px',
     minHeight: '80px',
     resize: 'vertical',
+    fontFamily: 'inherit',
+  },
+  listingSection: {
+    padding: '16px',
+    border: '1px solid #eee',
+    borderRadius: '8px',
+    background: '#fafafa',
+  },
+  checkboxLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    marginBottom: '12px',
+    fontWeight: 500,
+    color: '#222',
+    cursor: 'pointer',
+    fontSize: '14px',
+  },
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
+  },
+  listingSelector: {
+    marginTop: '8px',
+  },
+  selectedListing: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 12px',
+    background: '#fff',
+    border: '1px solid #ddd',
+    borderRadius: '6px',
+  },
+  selectedListingName: {
+    fontWeight: 500,
+    color: '#222',
+    fontSize: '14px',
+  },
+  changeButton: {
+    background: 'rgba(0,0,0,0.1)',
+    color: '#222',
+    border: '1px solid #ccc',
+    borderRadius: '4px',
+    padding: '4px 8px',
+    fontSize: '12px',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
+  selectButton: {
+    background: 'rgba(0,0,0,0.8)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '8px 16px',
+    fontSize: '14px',
+    cursor: 'pointer',
     fontFamily: 'inherit',
   },
   actions: {
