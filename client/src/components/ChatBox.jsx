@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { ENDPOINTS } from '../config.js';
 import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation } from '../services/aiContactActions';
@@ -21,11 +21,20 @@ const isShowListsCommand = (msg) => {
 
 const ChatBox = ({ onShowLists }) => {
   const [message, setMessage] = useState('');
-  const [response, setResponse] = useState('');
+  const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [lastActionType, setLastActionType] = useState('');
   const [showAbout, setShowAbout] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -39,14 +48,27 @@ const ChatBox = ({ onShowLists }) => {
     if (isShowListsCommand(message)) {
       if (onShowLists) onShowLists();
       setMessage('');
-      setResponse('');
       setLastActionType('show_lists');
       return;
     }
 
+    // Store the message content before clearing the input
+    const currentMessage = message;
+    
+    // Clear the input immediately for instant feedback
+    setMessage('');
+    
+    // Add user message to conversation IMMEDIATELY
+    const userMessage = {
+      id: Date.now(),
+      type: 'user',
+      content: currentMessage,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, userMessage]);
+
     setLoading(true);
     setError('');
-    setResponse('');
     setLastActionType('');
 
     try {
@@ -54,10 +76,10 @@ const ChatBox = ({ onShowLists }) => {
       let actionType = '';
 
       // Debug: Log which command type is detected
-      const isList = isListCreationCommand(message);
-      const isContact = isContactActionCommand(message);
+      const isList = isListCreationCommand(currentMessage);
+      const isContact = isContactActionCommand(currentMessage);
       console.log('🔍 Command Analysis:', {
-        message,
+        message: currentMessage,
         isListCreation: isList,
         isContactAction: isContact
       });
@@ -66,7 +88,7 @@ const ChatBox = ({ onShowLists }) => {
       if (isList) {
         console.log('📋 Routing to List Creation endpoint');
         // Use AI List Creation endpoint
-        const result = await processListCreation(message);
+        const result = await processListCreation(currentMessage);
         
         if (result.success) {
           responseText = `${result.message}\n\nList Details:\n- Name: ${result.listName}\n- Contacts: ${result.contactCount}\n- ID: ${result.listId}`;
@@ -88,7 +110,7 @@ const ChatBox = ({ onShowLists }) => {
       else if (isContact) {
         console.log('👤 Routing to Contact Action endpoint');
         // Use AI Contact Actions endpoint
-        const result = await processContactAction(message);
+        const result = await processContactAction(currentMessage);
         
         if (result.success) {
           responseText = result.message;
@@ -100,13 +122,15 @@ const ChatBox = ({ onShowLists }) => {
         console.log('💬 Routing to General Chat endpoint');
         // Use regular chat endpoint
         const result = await axios.post(ENDPOINTS.CHAT, {
-          message: message
+          message: currentMessage
         });
         
         // Better response handling to prevent crashes
         if (result.data) {
           if (typeof result.data === 'string') {
             responseText = result.data;
+          } else if (result.data.reply) {
+            responseText = result.data.reply;
           } else if (result.data.response) {
             responseText = result.data.response;
           } else if (result.data.message) {
@@ -121,9 +145,16 @@ const ChatBox = ({ onShowLists }) => {
         actionType = 'chat';
       }
       
-      setResponse(responseText);
+      // Add AI response to conversation
+      const aiMessage = {
+        id: Date.now() + 1,
+        type: 'ai',
+        content: responseText,
+        actionType: actionType,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, aiMessage]);
       setLastActionType(actionType);
-      setMessage('');
     } catch (err) {
       console.error('Chat error:', err);
       let errorMessage = 'An error occurred while sending the message';
@@ -164,7 +195,7 @@ const ChatBox = ({ onShowLists }) => {
 
   return (
     <div style={styles.container}>
-      {/* Response Display Area */}
+      {/* Conversation Display Area */}
       <div style={styles.responseArea}>
         {loading && (
           <div style={styles.loading}>
@@ -185,26 +216,42 @@ const ChatBox = ({ onShowLists }) => {
           </div>
         )}
         
-        {response && !loading && (
-          <div style={styles.response}>
-            <div style={styles.responseHeader}>
-              <strong>
-                {lastActionType === 'contact_action' ? 'Contact Action' : lastActionType === 'list_creation' ? 'List Creation' : lastActionType === 'show_lists' ? 'Contact Lists' : 'Response'}:
-              </strong>
-              {lastActionType === 'contact_action' && (
-                <span style={styles.actionBadge}>AI Contact Management</span>
-              )}
-              {lastActionType === 'list_creation' && (
-                <span style={styles.actionBadge}>AI List Creation</span>
-              )}
+        {/* Messages */}
+        <div style={styles.messagesContainer}>
+          {messages.map((msg) => (
+            <div 
+              key={msg.id} 
+              style={{
+                ...styles.message,
+                ...(msg.type === 'user' ? styles.userMessage : styles.aiMessage)
+              }}
+            >
+              <div style={styles.messageHeader}>
+                <strong style={styles.messageSender}>
+                  {msg.type === 'user' ? 'You' : 'AI Assistant'}
+                </strong>
+                {msg.actionType && msg.actionType !== 'chat' && (
+                  <span style={styles.actionBadge}>
+                    {msg.actionType === 'contact_action' ? 'AI Contact Management' : 
+                     msg.actionType === 'list_creation' ? 'AI List Creation' : 
+                     msg.actionType === 'show_lists' ? 'Contact Lists' : 'AI Action'}
+                  </span>
+                )}
+                <span style={styles.messageTime}>
+                  {msg.timestamp.toLocaleTimeString()}
+                </span>
+              </div>
+              <div style={styles.messageContent}>
+                {msg.content}
+              </div>
             </div>
-            <pre style={styles.responseText}>{response}</pre>
-          </div>
-        )}
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
         
-        {!response && !loading && !error && (
+        {messages.length === 0 && !loading && !error && (
           <div style={styles.placeholder}>
-            Your conversation will appear here...
+            Start a conversation with your AI assistant...
           </div>
         )}
       </div>
@@ -429,6 +476,54 @@ const styles = {
     color: 'white',
     borderRadius: '4px',
     fontSize: '12px',
+  },
+  messagesContainer: {
+    maxHeight: '400px',
+    overflowY: 'auto',
+    padding: '10px 0',
+  },
+  message: {
+    marginBottom: '20px',
+    padding: '15px',
+    borderRadius: '12px',
+    maxWidth: '85%',
+    wordWrap: 'break-word',
+  },
+  userMessage: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    color: 'white',
+    marginLeft: 'auto',
+    borderBottomRightRadius: '4px',
+  },
+  aiMessage: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    color: '#2c2c2c',
+    marginRight: 'auto',
+    borderBottomLeftRadius: '4px',
+    border: '1px solid rgba(0, 0, 0, 0.1)',
+  },
+  messageHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '8px',
+    flexWrap: 'wrap',
+    gap: '8px',
+  },
+  messageSender: {
+    fontSize: '14px',
+    fontWeight: '600',
+  },
+  messageTime: {
+    fontSize: '12px',
+    opacity: '0.7',
+    fontStyle: 'italic',
+  },
+  messageContent: {
+    fontSize: '14px',
+    lineHeight: '1.5',
+    whiteSpace: 'pre-wrap',
+    wordWrap: 'break-word',
   },
   aboutContainer: {
     marginBottom: '15px',

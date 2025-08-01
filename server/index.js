@@ -3,7 +3,11 @@ const functions = require('firebase-functions');
 // Set environment variable to indicate we're in Firebase Functions
 process.env.FIREBASE_FUNCTIONS = 'true';
 
-const app = require('./server');
+// Export a simple test function first
+exports.test = functions.https.onRequest((req, res) => {
+  res.json({ message: 'Test function working!' });
+});
 
-// Export the Express app as a Firebase Function
+// Export the main API function
+const app = require('./server');
 exports.api = functions.https.onRequest(app); 

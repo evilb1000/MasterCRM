@@ -94,12 +94,12 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
       WebkitBackdropFilter: 'blur(16px)',
       borderRadius: '18px',
       boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
-      padding: '36px 48px 32px 48px',
+      padding: currentMode === 'edit' ? '20px 30px 16px 30px' : '36px 48px 32px 48px',
       minWidth: '500px',
       maxWidth: currentMode === 'edit' ? '900px' : '700px',
       width: currentMode === 'edit' ? '95vw' : '90vw',
       minHeight: '200px',
-      maxHeight: '95vh',
+      maxHeight: currentMode === 'edit' ? '75vh' : '95vh',
       position: 'relative',
       fontFamily: 'Georgia, serif',
       overflowY: 'auto',
@@ -119,17 +119,17 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
       zIndex: 2,
     },
     title: {
-      fontSize: '2rem',
+      fontSize: currentMode === 'edit' ? '1.5rem' : '2rem',
       fontWeight: 600,
-      marginBottom: 18,
+      marginBottom: currentMode === 'edit' ? 12 : 18,
       color: '#222',
       textAlign: 'center',
     },
     content: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 18,
-      marginBottom: 18,
+      gap: currentMode === 'edit' ? 12 : 18,
+      marginBottom: currentMode === 'edit' ? 12 : 18,
       flex: 1,
     },
     actions: {
@@ -210,10 +210,10 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
       fontFamily: 'Georgia, serif',
     },
     notesTextarea: {
-      height: currentMode === 'edit' ? '400px' : '300px',
+      height: currentMode === 'edit' ? '60px' : '300px',
       resize: 'vertical',
-      minHeight: currentMode === 'edit' ? '300px' : '200px',
-      maxHeight: currentMode === 'edit' ? '800px' : '600px',
+      minHeight: currentMode === 'edit' ? '50px' : '200px',
+      maxHeight: currentMode === 'edit' ? '80px' : '600px',
       width: '100%',
       fontSize: '1.1rem',
       overflowY: 'auto',
@@ -245,8 +245,8 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
             ...(mode === 'edit' ? {
               maxWidth: '1000px',
               width: '98vw',
-              minHeight: '400px',
-              padding: '48px 64px 40px 64px',
+              minHeight: '300px',
+              padding: '20px 30px 16px 30px',
             } : {})
           }}
         >
@@ -329,9 +329,9 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
                   style={{
                     ...fieldStyles.input,
                     ...styles.notesTextarea,
-                    height: '500px',
-                    minHeight: '400px',
-                    maxHeight: '1000px',
+                    height: mode === 'edit' ? '60px' : '500px',
+                    minHeight: mode === 'edit' ? '50px' : '400px',
+                    maxHeight: mode === 'edit' ? '80px' : '1000px',
                     fontSize: '1.2rem',
                     ...(mode === 'edit' ? { width: '100%' } : {})
                   }}
@@ -395,7 +395,7 @@ const ModalField = ({ label, value, mode, onChange, textarea }) => (
     {mode === 'edit' ? (
       textarea ? (
         <textarea
-          style={fieldStyles.input}
+          style={fieldStyles.textarea}
           value={value}
           onChange={e => onChange(e.target.value)}
         />
@@ -442,6 +442,22 @@ const fieldStyles = {
     color: '#222',
     outline: 'none',
     transition: 'border 0.2s',
+  },
+  textarea: {
+    flex: 1,
+    padding: '7px 12px',
+    border: '1px solid #ddd',
+    borderRadius: 6,
+    fontSize: '1rem',
+    fontFamily: 'Georgia, serif',
+    background: 'rgba(255,255,255,0.7)',
+    color: '#222',
+    outline: 'none',
+    transition: 'border 0.2s',
+    resize: 'vertical',
+    minHeight: '50px',
+    maxHeight: '80px',
+    overflowY: 'auto',
   },
 };
 
