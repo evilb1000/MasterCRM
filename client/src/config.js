@@ -15,11 +15,11 @@ export const ENDPOINTS = {
   ADD_CONTACT_LIST_TO_LISTING: 'https://us-central1-lod-crm-systems.cloudfunctions.net/addContactListToListing',
   GET_LISTINGS: 'https://us-central1-lod-crm-systems.cloudfunctions.net/getListings',
   // Activities endpoints
-  CREATE_ACTIVITY: `${API_BASE_URL}/activities`,
-  GET_ACTIVITIES: `${API_BASE_URL}/activities`,
-  GET_CONTACT_ACTIVITIES: `${API_BASE_URL}/activities/contact`,
-  UPDATE_ACTIVITY: `${API_BASE_URL}/activities`,
-  DELETE_ACTIVITY: `${API_BASE_URL}/activities`
+  CREATE_ACTIVITY: 'https://us-central1-lod-crm-systems.cloudfunctions.net/createActivity',
+  GET_ACTIVITIES: 'https://us-central1-lod-crm-systems.cloudfunctions.net/getActivities',
+  GET_CONTACT_ACTIVITIES: 'https://us-central1-lod-crm-systems.cloudfunctions.net/getContactActivities',
+  UPDATE_ACTIVITY: 'https://us-central1-lod-crm-systems.cloudfunctions.net/updateActivity',
+  DELETE_ACTIVITY: 'https://us-central1-lod-crm-systems.cloudfunctions.net/deleteActivity'
 };
 
 export default {

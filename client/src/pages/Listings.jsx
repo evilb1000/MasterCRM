@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, query, where } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, query, where, addDoc } from 'firebase/firestore';
 import { db, firebase } from '../firebase';
 import { Link } from 'react-router-dom';
 
@@ -23,6 +23,16 @@ const Listings = () => {
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [contactActivities, setContactActivities] = useState([]);
   const [contactActivitiesLoading, setContactActivitiesLoading] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createFields, setCreateFields] = useState({
+    streetAddress: '',
+    city: '',
+    state: '',
+    zip: '',
+    'SF available': '',
+    leaseorsale: 'lease',
+    'price per sf': ''
+  });
 
 
   useEffect(() => {
@@ -264,9 +274,62 @@ const Listings = () => {
     setSelectedContact(null);
   };
 
+  const openCreateModal = () => {
+    setCreateModalOpen(true);
+    setCreateFields({
+      streetAddress: '',
+      city: '',
+      state: '',
+      zip: '',
+      'SF available': '',
+      leaseorsale: 'lease',
+      'price per sf': ''
+    });
+  };
+
+  const closeCreateModal = () => {
+    setCreateModalOpen(false);
+  };
+
+  const handleCreateFieldChange = (field, value) => {
+    setCreateFields(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleCreateListing = async () => {
+    try {
+      const listingData = {
+        ...createFields,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        contactListIds: []
+      };
+
+      const docRef = await addDoc(collection(db, 'listings'), listingData);
+      
+      // Add the new listing to the state
+      const newListing = {
+        id: docRef.id,
+        ...listingData
+      };
+      setListings(prev => [...prev, newListing]);
+      
+      closeCreateModal();
+      alert('Listing created successfully!');
+    } catch (err) {
+      console.error('Error creating listing:', err);
+      alert('Failed to create listing: ' + err.message);
+    }
+  };
+
   return (
     <div style={styles.page}>
       <Link to="/" style={styles.homeButton}>Home</Link>
+      <button style={styles.createButton} onClick={openCreateModal}>
+        + Create Listing
+      </button>
       <div style={styles.header}>
         <h1 style={styles.title}>Listings</h1>
         <p style={styles.subtitle}>
@@ -516,6 +579,49 @@ const Listings = () => {
           </div>
         </div>
       )}
+      {createModalOpen && (
+        <div style={styles.modalOverlay} onClick={closeCreateModal}>
+          <div style={styles.modal} onClick={e => e.stopPropagation()}>
+            <button style={styles.closeButton} onClick={closeCreateModal}>×</button>
+            <h2 style={styles.modalTitle}>Create New Listing</h2>
+            <div style={styles.modalField}>
+              <span style={styles.label}>Address:</span>
+              <input style={styles.input} value={createFields.streetAddress} onChange={e => handleCreateFieldChange('streetAddress', e.target.value)} placeholder="Enter street address" />
+            </div>
+            <div style={styles.modalField}>
+              <span style={styles.label}>City:</span>
+              <input style={styles.input} value={createFields.city} onChange={e => handleCreateFieldChange('city', e.target.value)} placeholder="Enter city" />
+            </div>
+            <div style={styles.modalField}>
+              <span style={styles.label}>State:</span>
+              <input style={styles.input} value={createFields.state} onChange={e => handleCreateFieldChange('state', e.target.value)} placeholder="Enter state" />
+            </div>
+            <div style={styles.modalField}>
+              <span style={styles.label}>Zip:</span>
+              <input style={styles.input} value={createFields.zip} onChange={e => handleCreateFieldChange('zip', e.target.value)} placeholder="Enter zip code" />
+            </div>
+            <div style={styles.modalField}>
+              <span style={styles.label}>SF Available:</span>
+              <input style={styles.input} value={createFields['SF available']} onChange={e => handleCreateFieldChange('SF available', e.target.value)} placeholder="Enter square footage" />
+            </div>
+            <div style={styles.modalField}>
+              <span style={styles.label}>Lease or Sale:</span>
+              <select style={styles.input} value={createFields.leaseorsale} onChange={e => handleCreateFieldChange('leaseorsale', e.target.value)}>
+                <option value="lease">Lease</option>
+                <option value="sale">Sale</option>
+              </select>
+            </div>
+            <div style={styles.modalField}>
+              <span style={styles.label}>Price per SF:</span>
+              <input style={styles.input} value={createFields['price per sf']} onChange={e => handleCreateFieldChange('price per sf', e.target.value)} placeholder="Enter price per square foot" />
+            </div>
+            <div style={{ display: 'flex', gap: '16px', marginTop: '18px' }}>
+              <button style={styles.saveButton} onClick={handleCreateListing}>Create Listing</button>
+              <button style={styles.cancelButton} onClick={closeCreateModal}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -530,9 +636,28 @@ const styles = {
     alignItems: 'center',
     padding: '40px 0',
   },
+
   header: {
     textAlign: 'center',
     marginBottom: '30px',
+  },
+  createButton: {
+    position: 'fixed',
+    top: '80px',
+    left: '32px',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    color: '#ffffff',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    padding: '12px 25px',
+    fontSize: '16px',
+    fontWeight: '400',
+    cursor: 'pointer',
+    borderRadius: '8px',
+    transition: 'all 0.3s ease',
+    fontFamily: 'Georgia, serif',
+    backdropFilter: 'blur(10px)',
+    WebkitBackdropFilter: 'blur(10px)',
+    zIndex: 1000,
   },
   title: {
     fontSize: '2.5rem',

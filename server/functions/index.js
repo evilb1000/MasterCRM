@@ -1313,6 +1313,284 @@ async function logListAction(command, action, listId, listData) {
   }
 }
 
+// Activities Firebase Functions
+
+// Create a new activity
+export const createActivity = onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  // Only allow POST requests
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    return;
+  }
+
+  try {
+    const activityData = req.body;
+
+    // Validate required fields
+    if (!activityData.type || !activityData.description) {
+      return res.status(400).json({
+        error: 'Missing required fields: type and description'
+      });
+    }
+
+    // Add timestamp
+    activityData.createdAt = FieldValue.serverTimestamp();
+    activityData.updatedAt = FieldValue.serverTimestamp();
+
+    logger.info('📝 Creating new activity:', { type: activityData.type, contactId: activityData.contactId });
+
+    // Save to Firestore
+    const activityRef = await db.collection('activities').add(activityData);
+    
+    logger.info('✅ Activity created successfully:', activityRef.id);
+
+    res.json({
+      success: true,
+      activityId: activityRef.id,
+      message: 'Activity created successfully'
+    });
+
+  } catch (error) {
+    logger.error('❌ Error creating activity:', error);
+    res.status(500).json({
+      error: 'Failed to create activity',
+      details: error.message
+    });
+  }
+});
+
+// Get all activities with optional filtering
+export const getActivities = onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  // Only allow GET requests
+  if (req.method !== 'GET') {
+    res.status(405).json({ error: 'Method not allowed. Use GET.' });
+    return;
+  }
+
+  try {
+    const { type, limit, offset } = req.query;
+    
+    logger.info('📋 Fetching activities with filters:', { type, limit, offset });
+
+    let query = db.collection('activities').orderBy('date', 'desc');
+
+    // Apply filters
+    if (type) {
+      query = query.where('type', '==', type);
+    }
+
+    // Apply pagination
+    if (limit) {
+      query = query.limit(parseInt(limit));
+    }
+
+    if (offset) {
+      query = query.offset(parseInt(offset));
+    }
+
+    const querySnapshot = await query.get();
+    
+    const activities = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    logger.info(`✅ Successfully fetched ${activities.length} activities`);
+
+    res.json({
+      success: true,
+      activities: activities
+    });
+
+  } catch (error) {
+    logger.error('❌ Error fetching activities:', error);
+    res.status(500).json({
+      error: 'Failed to fetch activities',
+      details: error.message
+    });
+  }
+});
+
+// Get activities for a specific contact
+export const getContactActivities = onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  // Only allow GET requests
+  if (req.method !== 'GET') {
+    res.status(405).json({ error: 'Method not allowed. Use GET.' });
+    return;
+  }
+
+  try {
+    const contactId = req.path.split('/').pop(); // Get contactId from URL path
+    
+    if (!contactId) {
+      return res.status(400).json({
+        error: 'Contact ID is required'
+      });
+    }
+
+    logger.info('📋 Fetching activities for contact:', contactId);
+
+    const querySnapshot = await db.collection('activities')
+      .where('contactId', '==', contactId)
+      .orderBy('date', 'desc')
+      .get();
+
+    const activities = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    logger.info(`✅ Successfully fetched ${activities.length} activities for contact ${contactId}`);
+
+    res.json({
+      success: true,
+      activities: activities
+    });
+
+  } catch (error) {
+    logger.error('❌ Error fetching contact activities:', error);
+    res.status(500).json({
+      error: 'Failed to fetch contact activities',
+      details: error.message
+    });
+  }
+});
+
+// Update an activity
+export const updateActivity = onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  // Only allow PUT requests
+  if (req.method !== 'PUT') {
+    res.status(405).json({ error: 'Method not allowed. Use PUT.' });
+    return;
+  }
+
+  try {
+    const activityId = req.path.split('/').pop(); // Get activityId from URL path
+    const updateData = req.body;
+
+    if (!activityId) {
+      return res.status(400).json({
+        error: 'Activity ID is required'
+      });
+    }
+
+    // Add updated timestamp
+    updateData.updatedAt = FieldValue.serverTimestamp();
+
+    logger.info('📝 Updating activity:', activityId);
+
+    // Update in Firestore
+    await db.collection('activities').doc(activityId).update(updateData);
+    
+    logger.info('✅ Activity updated successfully:', activityId);
+
+    res.json({
+      success: true,
+      message: 'Activity updated successfully'
+    });
+
+  } catch (error) {
+    logger.error('❌ Error updating activity:', error);
+    res.status(500).json({
+      error: 'Failed to update activity',
+      details: error.message
+    });
+  }
+});
+
+// Delete an activity
+export const deleteActivity = onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  // Only allow DELETE requests
+  if (req.method !== 'DELETE') {
+    res.status(405).json({ error: 'Method not allowed. Use DELETE.' });
+    return;
+  }
+
+  try {
+    const activityId = req.path.split('/').pop(); // Get activityId from URL path
+
+    if (!activityId) {
+      return res.status(400).json({
+        error: 'Activity ID is required'
+      });
+    }
+
+    logger.info('🗑️ Deleting activity:', activityId);
+
+    // Delete from Firestore
+    await db.collection('activities').doc(activityId).delete();
+    
+    logger.info('✅ Activity deleted successfully:', activityId);
+
+    res.json({
+      success: true,
+      message: 'Activity deleted successfully'
+    });
+
+  } catch (error) {
+    logger.error('❌ Error deleting activity:', error);
+    res.status(500).json({
+      error: 'Failed to delete activity',
+      details: error.message
+    });
+  }
+});
+
 export const helloWorld = onRequest(
   { memory: "256MiB" },
   (req, res) => {
