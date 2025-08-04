@@ -14,8 +14,8 @@
     ]
   },
   "functions": {
-    "source": "server",
-    "runtime": "nodejs18"
+    "source": "server/functions",
+    "runtime": "nodejs22"
   },
   "firestore": {
     "rules": "firestore.rules",

@@ -9,7 +9,7 @@ export const API_BASE_URL = isDevelopment
 
 // API endpoints
 export const ENDPOINTS = {
-  AI_CONTACT_ACTION: `${API_BASE_URL}/ai-contact-action`,
+  AI_CONTACT_ACTION: `${API_BASE_URL}/aiContactAction`,
   AI_CREATE_LIST: `${API_BASE_URL}/ai-create-list`,
   CHAT: `${API_BASE_URL}/chat`,
   ADD_CONTACT_LIST_TO_LISTING: `${API_BASE_URL}/add-contact-list-to-listing`,

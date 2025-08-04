@@ -120,6 +120,85 @@ export const chat = onRequest(
   }
 );
 
+// AI Contact Action function
+export const aiContactAction = onRequest(
+  { secrets: [openaiApiSecret] },
+  async (req, res) => {
+    // Enable CORS
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed. Use POST.' });
+      return;
+    }
+
+    try {
+      const { command } = req.body;
+      
+      logger.info('🤖 AI Contact Action Request:', { command });
+
+      // Validate input
+      if (!command || typeof command !== 'string') {
+        logger.error('❌ Invalid input received:', { command });
+        return res.status(400).json({ 
+          error: 'Invalid input. Please provide a "command" field with a string value.' 
+        });
+      }
+
+      // Get the secret value
+      const apiKey = openaiApiSecret.value();
+      if (!apiKey) {
+        return res.status(500).json({ 
+          error: 'OpenAI API key not configured. Please set OPENAI_API_KEY secret.' 
+        });
+      }
+
+      // Initialize OpenAI client
+      const openai = new OpenAI({
+        apiKey: apiKey,
+      });
+
+      // For now, return a simple response indicating the function is working
+      // TODO: Implement full contact action logic
+      const response = {
+        success: true,
+        message: `Contact action received: "${command}". This function is being implemented.`,
+        intent: "UPDATE_CONTACT",
+        confidence: 0.8
+      };
+
+      res.json(response);
+
+    } catch (error) {
+      logger.error('Error in aiContactAction function:', error);
+      
+      // Handle specific OpenAI errors
+      if (error.status === 401) {
+        return res.status(401).json({ error: 'Invalid OpenAI API key' });
+      } else if (error.status === 429) {
+        return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+      } else if (error.status === 400) {
+        return res.status(400).json({ error: 'Invalid request to OpenAI API' });
+      }
+      
+      // Generic error response
+      res.status(500).json({ 
+        error: 'An error occurred while processing your contact action request',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
+
 export const helloWorld = onRequest(
   { memory: "256MiB" },
   (req, res) => {
