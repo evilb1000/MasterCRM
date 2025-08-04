@@ -26,38 +26,59 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
     setEditContact(contact || {});
   }, [contact]);
 
-  useEffect(() => {
-    // Fetch activities for the contact when modal opens in view mode
-    const fetchContactActivities = async () => {
-      if (!open || !contact || mode !== 'view') {
-        setContactActivities([]);
-        return;
-      }
-      
-      setContactActivitiesLoading(true);
-      try {
-        console.log('Fetching activities for contact:', contact.id);
-        
-        // Use API endpoint to fetch activities
-        const response = await getContactActivities(contact.id);
-        
-        if (response.success) {
-          console.log('Contact activities found:', response.activities.length);
-          setContactActivities(response.activities);
-        } else {
-          console.error('Failed to fetch activities:', response.error);
-          setContactActivities([]);
-        }
-      } catch (err) {
-        console.error('Error fetching contact activities:', err);
-        setContactActivities([]);
-      } finally {
-        setContactActivitiesLoading(false);
-      }
-    };
+  // Fetch activities for the contact
+  const fetchContactActivities = async () => {
+    if (!open || !contact || mode !== 'view') {
+      setContactActivities([]);
+      return;
+    }
     
+    setContactActivitiesLoading(true);
+    try {
+      console.log('Fetching activities for contact:', contact.id);
+      
+      // Use API endpoint to fetch activities
+      const response = await getContactActivities(contact.id);
+      
+      if (response.success) {
+        console.log('Contact activities found:', response.activities.length);
+        setContactActivities(response.activities);
+      } else {
+        console.error('Failed to fetch activities:', response.error);
+        setContactActivities([]);
+      }
+    } catch (err) {
+      console.error('Error fetching contact activities:', err);
+      setContactActivities([]);
+    } finally {
+      setContactActivitiesLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchContactActivities();
   }, [open, contact, mode]);
+
+  // Listen for AI activity creation events and refresh activities
+  useEffect(() => {
+    const handleAiActivityCreated = (event) => {
+      console.log('🎯 ContactModal received aiActivityCreated event:', event.detail);
+      const { contactId } = event.detail;
+      console.log('🎯 Current contact ID:', contact?.id, 'Event contact ID:', contactId);
+      if (open && contact && contact.id === contactId) {
+        console.log('🔄 AI Activity created for this contact, refreshing activities');
+        fetchContactActivities();
+      } else {
+        console.log('❌ ContactModal not open or contact ID mismatch');
+      }
+    };
+
+    window.addEventListener('aiActivityCreated', handleAiActivityCreated);
+    
+    return () => {
+      window.removeEventListener('aiActivityCreated', handleAiActivityCreated);
+    };
+  }, [open, contact]);
 
   if (!open) return null;
 

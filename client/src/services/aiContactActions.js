@@ -93,6 +93,31 @@ export function isContactActionCommand(message) {
     'delete', 'remove', 'add', 'create', 'new contact'
   ];
   
+  // Activity creation patterns
+  const activityPatterns = [
+    /called me/i,
+    /emailed me/i,
+    /met with/i,
+    /texted me/i,
+    /showed property to/i,
+    /followed up with/i,
+    /had a call with/i,
+    /had an email with/i,
+    /had a meeting with/i,
+    /make an activity/i,
+    /log this activity/i,
+    /create an activity/i,
+    /add an activity/i,
+    /record this/i,
+    /log this/i,
+    /log a call/i,
+    /log an activity/i,
+    /log.*call.*with/i,
+    /log.*activity.*with/i,
+    /call.*with.*discussed/i,
+    /discussed.*with/i
+  ];
+  
   // Secondary keywords that indicate contact actions when combined with primary
   const secondaryKeywords = [
     'phone', 'email', 'address', 'company', 'name',
@@ -100,6 +125,11 @@ export function isContactActionCommand(message) {
   ];
   
   const lowerMessage = message.toLowerCase();
+  
+  // Check for activity patterns first (these are high priority)
+  if (activityPatterns.some(pattern => pattern.test(message))) {
+    return true;
+  }
   
   // Check for primary keywords first (these always indicate contact actions)
   if (primaryKeywords.some(keyword => lowerMessage.includes(keyword))) {

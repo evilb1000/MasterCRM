@@ -83,6 +83,11 @@ const ChatBox = ({ onShowLists }) => {
         isListCreation: isList,
         isContactAction: isContact
       });
+      
+      // Additional debugging for activity patterns
+      if (currentMessage.toLowerCase().includes('log') || currentMessage.toLowerCase().includes('call')) {
+        console.log('🔍 Activity pattern detected in message:', currentMessage);
+      }
 
       // Check if this is a list creation command
       if (isList) {
@@ -115,6 +120,27 @@ const ChatBox = ({ onShowLists }) => {
         if (result.success) {
           responseText = result.message;
           actionType = 'contact_action';
+          
+          // If this was an activity creation, emit a custom event
+          if (result.data && result.data.action === 'create_activity') {
+            console.log('🎯 AI Activity created, dispatching refresh event');
+            window.dispatchEvent(new CustomEvent('aiActivityCreated', {
+              detail: {
+                contactId: result.data.contactId,
+                activityType: result.data.activityType,
+                activityId: result.data.activityId
+              }
+            }));
+          } else if (result.action === 'create_activity') {
+            console.log('🎯 AI Activity created, dispatching refresh event (direct action)');
+            window.dispatchEvent(new CustomEvent('aiActivityCreated', {
+              detail: {
+                contactId: result.contactId,
+                activityType: result.activityType,
+                activityId: result.activityId
+              }
+            }));
+          }
         } else {
           throw new Error(result.error);
         }
