@@ -322,10 +322,7 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
                 onChange={v => handleChange('businessSector', v)}
               />
             )}
-            {/* Debug info */}
-            <div style={{fontSize: '10px', color: 'red', marginTop: '5px'}}>
-              Debug: mode = "{mode}", businessSector = "{editContact.businessSector}" (type: {typeof editContact.businessSector})
-            </div>
+
             {/* Company */}
             <ModalField
               label="Company"

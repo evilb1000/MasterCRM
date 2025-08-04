@@ -563,14 +563,6 @@ const Contacts = () => {
                           <span style={styles.contactLabel}>Sector:</span>
                           <span style={styles.contactText}>{contact.businessSector || 'Unknown'}</span>
                         </div>
-                        {contact.createdAt && (
-                          <div style={styles.contactItem}>
-                            <span style={styles.contactLabel}>Added:</span>
-                            <span style={styles.contactText}>
-                              {formatDate(contact.createdAt)}
-                            </span>
-                          </div>
-                        )}
                       </div>
                       <div style={styles.contactActions}>
                         <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleOpenModal(contact, 'edit'); }}>Edit</button>

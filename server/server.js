@@ -47,6 +47,57 @@ console.log('🔧 OpenAI client initialized');
 app.use(cors());
 app.use(express.json());
 
+// Helper function to check if a query is CRM-related
+function isCRMQuery(message) {
+  const lowerMessage = message.toLowerCase();
+  
+  // CRM-related keywords and patterns
+  const crmKeywords = [
+    // Contact management
+    'contact', 'contacts', 'person', 'people', 'client', 'customer', 'lead',
+    'update', 'edit', 'change', 'modify', 'set', 'add', 'delete', 'remove',
+    'name', 'email', 'phone', 'company', 'address', 'business', 'sector',
+    'linkedin', 'notes', 'note',
+    
+    // Activity logging
+    'activity', 'activities', 'log', 'logged', 'call', 'email', 'meeting',
+    'showing', 'appointment', 'discussed', 'discussion', 'talked', 'spoke',
+    
+    // List management
+    'list', 'lists', 'create', 'make', 'build', 'generate', 'show', 'display',
+    'find', 'search', 'filter', 'criteria', 'group', 'category',
+    
+    // CRM system
+    'crm', 'system', 'help', 'assist', 'how to', 'what can', 'guide',
+    'manage', 'organize', 'track', 'record', 'database',
+    
+    // Common CRM phrases
+    'how do i', 'can you help', 'i need to', 'i want to', 'please help',
+    'show me', 'tell me about', 'explain', 'what is', 'where is'
+  ];
+  
+  // Check if message contains any CRM keywords
+  const hasCRMKeyword = crmKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  // Additional patterns that indicate CRM intent
+  const crmPatterns = [
+    /\b(update|edit|change|modify|set)\s+\w+/i,
+    /\b(add|create|make|build|generate)\s+\w+/i,
+    /\b(log|record|track)\s+\w+/i,
+    /\b(find|search|show|display)\s+\w+/i,
+    /\b(contact|person|client|customer)\s+\w+/i,
+    /\b(activity|call|email|meeting|showing)\s+\w+/i,
+    /\b(list|group|category)\s+\w+/i,
+    /\?$/, // Questions
+    /\b(how|what|where|when|why|can|could|would|should)\b/i // Question words
+  ];
+  
+  const hasCRMPattern = crmPatterns.some(pattern => pattern.test(message));
+  
+  // Return true if either condition is met
+  return hasCRMKeyword || hasCRMPattern;
+}
+
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({ message: 'Martin Rebuild Backend is running!' });
@@ -68,6 +119,14 @@ app.post('/chat', async (req, res) => {
     if (!openaiApiKey || openaiApiKey === 'your_openai_api_key_here') {
       return res.status(500).json({ 
         error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file or Firebase Functions config.' 
+      });
+    }
+
+    // Check if message is CRM-related
+    const isCRMRelated = isCRMQuery(message);
+    if (!isCRMRelated) {
+      return res.json({ 
+        reply: "I am only trained to provide assistance within the confines of the CRM system. Please ask me about contact management, activity logging, list creation, or other CRM-related tasks."
       });
     }
 
@@ -196,6 +255,14 @@ IMPORTANT: For CREATE_ACTIVITY, look for these patterns:
 - "[contact] called me" or "[contact] emailed me"
 - "had a [type] with [contact]" where type is call/email/meeting/text/showing
 
+IMPORTANT: For CREATE_CONTACT, look for these patterns:
+- "create contact" or "create a contact" or "create new contact"
+- "add contact" or "add a contact" or "add new contact"
+- "new contact" or "create contact for [name]"
+- "add contact for [name]" or "create contact [name]"
+- "new contact [name] [email] [phone] [company]"
+- "create contact: [name], [email], [phone], [company]"
+
 Contact identification can be by:
 - Email address (contains @)
 - Full name (firstName + lastName)
@@ -210,6 +277,15 @@ Analyze the following user request and respond with ONLY a JSON object in this e
     "action": "update|add_note|create_activity|create|delete|search|list|create_list",
     "field": "fieldName (if mentioned)",
     "value": "new value (if mentioned)",
+    "firstName": "first name (if creating contact)",
+    "lastName": "last name (if creating contact)",
+    "email": "email address (if creating contact)",
+    "phone": "phone number (if creating contact)",
+    "company": "company name (if creating contact)",
+    "address": "address (if creating contact)",
+    "businessSector": "business sector (if creating contact)",
+    "linkedin": "linkedin profile (if creating contact)",
+    "notes": "notes (if creating contact)",
     "activityType": "call|email|meeting|text|showing|follow_up|other (if creating activity)",
     "activityDescription": "description of the activity (if creating activity)",
     "query": "search terms (if searching)",
@@ -226,6 +302,13 @@ Examples of ADD_NOTE commands:
 - "add note for john@example.com: Great follow-up candidate"
 - "John Smith note: Interested in new product line"
 - "add note: Loves coffee meetings for Elodie Wren"
+
+Examples of CREATE_CONTACT commands:
+- "create contact for John Smith"
+- "add contact john@example.com"
+- "new contact: John Smith, john@example.com, 555-1234, Acme Corp"
+- "create contact John Smith with email john@example.com and phone 555-1234"
+- "add new contact: Jane Doe from Tech Solutions"
 
 User request: "${command}"
 
@@ -704,13 +787,102 @@ async function handleCreateActivity(extractedData, originalCommand) {
 
 // Helper function to handle contact creation
 async function handleContactCreation(extractedData, originalCommand) {
-  // For now, return a message that contact creation is not yet implemented
-  // This can be expanded later
-  return {
-    success: false,
-    error: 'Contact creation via AI commands is not yet implemented. Please use the contact form.',
-    details: 'Feature not implemented'
+  console.log('🔍 Contact Creation Debug:', extractedData);
+  
+  // Extract contact information from the command
+  const { contactIdentifier, firstName, lastName, email, phone, company, address, businessSector, linkedin, notes } = extractedData;
+  
+  // Check if we have at least a name or email to create a contact
+  if (!contactIdentifier && !firstName && !lastName && !email) {
+    return {
+      success: false,
+      error: 'Please provide at least a name or email address to create a contact.',
+      details: 'Missing required contact information',
+      suggestion: 'Try: "create contact for John Smith" or "add contact john@example.com"'
+    };
+  }
+
+  // Parse contact identifier if provided (could be full name or email)
+  let parsedFirstName = firstName;
+  let parsedLastName = lastName;
+  let parsedEmail = email;
+
+  if (contactIdentifier) {
+    if (contactIdentifier.includes('@')) {
+      // It's an email address
+      parsedEmail = contactIdentifier;
+    } else if (contactIdentifier.includes(' ')) {
+      // It's a full name, split into first and last
+      const nameParts = contactIdentifier.split(' ');
+      parsedFirstName = nameParts[0];
+      parsedLastName = nameParts.slice(1).join(' ');
+    } else {
+      // Single word, treat as first name
+      parsedFirstName = contactIdentifier;
+    }
+  }
+
+  // Validate required fields
+  if (!parsedFirstName && !parsedEmail) {
+    return {
+      success: false,
+      error: 'Please provide at least a first name or email address.',
+      details: 'Missing required contact information'
+    };
+  }
+
+  // Check if contact already exists (by email if provided)
+  if (parsedEmail) {
+    const existingContact = await findContact(parsedEmail);
+    if (existingContact) {
+      return {
+        success: false,
+        error: `A contact with email "${parsedEmail}" already exists.`,
+        details: 'Contact already exists',
+        suggestion: 'Try updating the existing contact instead.'
+      };
+    }
+  }
+
+  // Prepare contact data
+  const contactData = {
+    firstName: parsedFirstName || '',
+    lastName: parsedLastName || '',
+    email: parsedEmail || '',
+    phone: phone || '',
+    company: company || '',
+    address: address || '',
+    businessSector: businessSector || '',
+    linkedin: linkedin || '',
+    notes: notes || '',
+    createdAt: new Date(),
+    updatedAt: new Date()
   };
+
+  // Create the contact in Firestore
+  try {
+    const contactRef = await db.collection('contacts').add(contactData);
+    console.log('✅ Contact created successfully with ID:', contactRef.id);
+
+    // Log the action
+    await logAction(originalCommand, 'create', contactRef.id, contactData, null, null);
+
+    return {
+      success: true,
+      message: `✅ Created new contact: ${contactData.firstName} ${contactData.lastName}${contactData.email ? ` (${contactData.email})` : ''}`,
+      action: 'create',
+      contactId: contactRef.id,
+      contactName: `${contactData.firstName} ${contactData.lastName}`.trim(),
+      contactData: contactData
+    };
+  } catch (createError) {
+    console.error('❌ Error creating contact:', createError);
+    return {
+      success: false,
+      error: 'Failed to create contact. Please try again.',
+      details: 'Database creation failed'
+    };
+  }
 }
 
 // Helper function to handle contact deletion

@@ -3,6 +3,72 @@ import axios from 'axios';
 import { ENDPOINTS } from '../config.js';
 import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation } from '../services/aiContactActions';
 
+// Helper function to check if a query is CRM-related
+function isCRMQuery(message) {
+  const lowerMessage = message.toLowerCase();
+  
+  // First, check for obvious non-CRM topics that should be blocked
+  const nonCRMTopics = [
+    'batman', 'superman', 'spiderman', 'iron man', 'captain america', 'avengers',
+    'marvel', 'dc comics', 'superhero', 'superheroes', 'comic book', 'comic books',
+    'movie', 'movies', 'film', 'films', 'television', 'tv show', 'tv shows',
+    'book', 'books', 'novel', 'novels', 'story', 'stories', 'fiction',
+    'weather', 'temperature', 'forecast', 'sports', 'football', 'basketball',
+    'baseball', 'soccer', 'music', 'song', 'songs', 'artist', 'artists',
+    'politics', 'political', 'news', 'current events', 'history', 'historical',
+    'science', 'scientific', 'math', 'mathematics', 'physics', 'chemistry',
+    'cooking', 'recipe', 'recipes', 'food', 'restaurant', 'restaurants',
+    'travel', 'vacation', 'trip', 'destination', 'hotel', 'hotels'
+  ];
+  
+  // If message contains any non-CRM topics, it's not CRM-related
+  if (nonCRMTopics.some(topic => lowerMessage.includes(topic))) {
+    return false;
+  }
+  
+  // CRM-related keywords and patterns (more specific)
+  const crmKeywords = [
+    // Contact management
+    'contact', 'contacts', 'person', 'people', 'client', 'customer', 'lead',
+    'update', 'edit', 'change', 'modify', 'set', 'add', 'delete', 'remove',
+    'name', 'email', 'phone', 'company', 'address', 'business', 'sector',
+    'linkedin', 'notes', 'note', 'new contact', 'create contact',
+    
+    // Activity logging
+    'activity', 'activities', 'log', 'logged', 'call', 'email', 'meeting',
+    'showing', 'appointment', 'discussed', 'discussion', 'talked', 'spoke',
+    
+    // List management
+    'list', 'lists', 'create', 'make', 'build', 'generate', 'show', 'display',
+    'find', 'search', 'filter', 'criteria', 'group', 'category',
+    
+    // CRM system
+    'crm', 'system', 'help', 'assist', 'how to', 'what can', 'guide',
+    'manage', 'organize', 'track', 'record', 'database'
+  ];
+  
+  // Check if message contains any CRM keywords
+  const hasCRMKeyword = crmKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  // More specific CRM patterns (avoid generic patterns)
+  const crmPatterns = [
+    /\b(update|edit|change|modify|set)\s+(contact|person|client|customer|name|email|phone|company|address)/i,
+    /\b(add|create|make|build|generate)\s+(contact|list|activity|note)/i,
+    /\b(log|record|track)\s+(call|email|meeting|activity|contact)/i,
+    /\b(find|search|show|display)\s+(contact|person|client|customer|list)/i,
+    /\b(contact|person|client|customer)\s+(management|info|information|details)/i,
+    /\b(activity|call|email|meeting|showing)\s+(log|logged|record|track)/i,
+    /\b(list|group|category)\s+(create|make|build|generate|show|display)/i,
+    /\b(new|create|add)\s+contact/i,
+    /\bcontact\s+(for|with|named)/i
+  ];
+  
+  const hasCRMPattern = crmPatterns.some(pattern => pattern.test(message));
+  
+  // Return true only if it has specific CRM patterns or keywords
+  return hasCRMKeyword || hasCRMPattern;
+}
+
 const isShowListsCommand = (msg) => {
   const phrases = [
     'show me my lists',
@@ -145,30 +211,38 @@ const ChatBox = ({ onShowLists }) => {
           throw new Error(result.error);
         }
       } else {
-        console.log('💬 Routing to General Chat endpoint');
-        // Use regular chat endpoint
-        const result = await axios.post(ENDPOINTS.CHAT, {
-          message: currentMessage
-        });
+        // Check if this is a CRM-related query before routing to general chat
+        const isCRMRelated = isCRMQuery(currentMessage);
+        if (!isCRMRelated) {
+          console.log('🚫 Non-CRM query detected, returning CRM-only message');
+          responseText = "I am only trained to provide assistance within the confines of the CRM system. Please ask me about contact management, activity logging, list creation, or other CRM-related tasks.";
+          actionType = 'crm_only';
+        } else {
+          console.log('💬 Routing to General Chat endpoint');
+          // Use regular chat endpoint
+          const result = await axios.post(ENDPOINTS.CHAT, {
+            message: currentMessage
+          });
         
-        // Better response handling to prevent crashes
-        if (result.data) {
-          if (typeof result.data === 'string') {
-            responseText = result.data;
-          } else if (result.data.reply) {
-            responseText = result.data.reply;
-          } else if (result.data.response) {
-            responseText = result.data.response;
-          } else if (result.data.message) {
-            responseText = result.data.message;
-          } else if (result.data.text) {
-            responseText = result.data.text;
-          } else {
-            // Fallback: stringify the entire response for debugging
-            responseText = JSON.stringify(result.data, null, 2);
+          // Better response handling to prevent crashes
+          if (result.data) {
+            if (typeof result.data === 'string') {
+              responseText = result.data;
+            } else if (result.data.reply) {
+              responseText = result.data.reply;
+            } else if (result.data.response) {
+              responseText = result.data.response;
+            } else if (result.data.message) {
+              responseText = result.data.message;
+            } else if (result.data.text) {
+              responseText = result.data.text;
+            } else {
+              // Fallback: stringify the entire response for debugging
+              responseText = JSON.stringify(result.data, null, 2);
+            }
           }
+          actionType = 'chat';
         }
-        actionType = 'chat';
       }
       
       // Add AI response to conversation
@@ -341,6 +415,18 @@ const ChatBox = ({ onShowLists }) => {
                 <li><strong>Add Note:</strong> "add note to [name]: [note]"</li>
               </ul>
               
+              <h3 style={styles.sectionTitle}>📞 Activity Creation</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Log Call:</strong> "log a call with [name]. We discussed [topic]"</li>
+                <li><strong>Log Call:</strong> "[name] called me and we discussed [topic]. Please log this activity."</li>
+                <li><strong>Log Email:</strong> "log an email with [name]. We discussed [topic]"</li>
+                <li><strong>Log Meeting:</strong> "log a meeting with [name]. We discussed [topic]"</li>
+                <li><strong>Log Showing:</strong> "log a showing with [name]. We discussed [topic]"</li>
+                <li><strong>Log Activity:</strong> "log an activity with [name]. We discussed [topic]"</li>
+                <li><strong>Create Activity:</strong> "create an activity for [name]. We discussed [topic]"</li>
+                <li><strong>Make Activity:</strong> "make an activity for [name]. We discussed [topic]"</li>
+              </ul>
+              
               <h3 style={styles.sectionTitle}>📋 List Creation</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Create List:</strong> "create list of [criteria]"</li>
@@ -362,11 +448,6 @@ const ChatBox = ({ onShowLists }) => {
                 <li><strong>Display Lists:</strong> "display my lists"</li>
                 <li><strong>List Lists:</strong> "list my lists"</li>
               </ul>
-              
-              <h3 style={styles.sectionTitle}>💬 General Chat</h3>
-              <p style={styles.generalText}>
-                For any other questions or general conversation, simply type your message and the AI will respond naturally.
-              </p>
               
               <h3 style={styles.sectionTitle}>📝 Available Fields</h3>
               <p style={styles.fieldsText}>
