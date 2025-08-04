@@ -42,6 +42,9 @@ function isCRMQuery(message) {
     'list', 'lists', 'create', 'make', 'build', 'generate', 'show', 'display',
     'find', 'search', 'filter', 'criteria', 'group', 'category',
     
+    // List-to-listing attachment
+    'attach', 'connect', 'link', 'send', 'listing', 'property', 'real estate',
+    
     // CRM system
     'crm', 'system', 'help', 'assist', 'how to', 'what can', 'guide',
     'manage', 'organize', 'track', 'record', 'database'
@@ -60,7 +63,9 @@ function isCRMQuery(message) {
     /\b(activity|call|email|meeting|showing)\s+(log|logged|record|track)/i,
     /\b(list|group|category)\s+(create|make|build|generate|show|display)/i,
     /\b(new|create|add)\s+contact/i,
-    /\bcontact\s+(for|with|named)/i
+    /\bcontact\s+(for|with|named)/i,
+    /\b(attach|connect|link|send)\s+(list|.*list)\s+to\s+(listing|property|.*listing)/i,
+    /\b(list|.*list)\s+to\s+(listing|property|.*listing)/i
   ];
   
   const hasCRMPattern = crmPatterns.some(pattern => pattern.test(message));

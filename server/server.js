@@ -220,6 +220,7 @@ Available actions:
 - SEARCH_CONTACT: User wants to find or search for contacts
 - LIST_CONTACTS: User wants to see all contacts
 - CREATE_LIST: User wants to create a contact list based on criteria
+- ATTACH_LIST_TO_LISTING: User wants to attach an existing contact list to a listing
 - GENERAL_QUERY: User is asking a general question about the CRM system
 
 Available contact fields: firstName, lastName, email, phone, company, address, businessSector, linkedin, notes
@@ -263,6 +264,14 @@ IMPORTANT: For CREATE_CONTACT, look for these patterns:
 - "new contact [name] [email] [phone] [company]"
 - "create contact: [name], [email], [phone], [company]"
 
+IMPORTANT: For ATTACH_LIST_TO_LISTING, look for these patterns:
+- "attach [list] to [listing]" or "attach [list] list to [listing]"
+- "connect [list] to [listing]" or "connect [list] list to [listing]"
+- "add [list] to [listing]" or "add [list] list to [listing]"
+- "send [list] to [listing]" or "send [list] list to [listing]"
+- "link [list] to [listing]" or "link [list] list to [listing]"
+- "[list] to [listing]" or "[list] list to [listing]"
+
 Contact identification can be by:
 - Email address (contains @)
 - Full name (firstName + lastName)
@@ -274,7 +283,7 @@ Analyze the following user request and respond with ONLY a JSON object in this e
   "confidence": 0.0-1.0,
   "extractedData": {
     "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
-    "action": "update|add_note|create_activity|create|delete|search|list|create_list",
+    "action": "update|add_note|create_activity|create|delete|search|list|create_list|attach_list_to_listing",
     "field": "fieldName (if mentioned)",
     "value": "new value (if mentioned)",
     "firstName": "first name (if creating contact)",
@@ -290,7 +299,9 @@ Analyze the following user request and respond with ONLY a JSON object in this e
     "activityDescription": "description of the activity (if creating activity)",
     "query": "search terms (if searching)",
     "listName": "suggested list name (if creating list)",
-    "listCriteria": "description of what contacts to include in the list"
+    "listCriteria": "description of what contacts to include in the list",
+    "listIdentifier": "name of the list to attach (if attaching list to listing)",
+    "listingIdentifier": "name or address of the listing to attach to (if attaching list to listing)"
   },
   "userMessage": "A friendly response explaining what you understood they want to do"
 }
@@ -309,6 +320,13 @@ Examples of CREATE_CONTACT commands:
 - "new contact: John Smith, john@example.com, 555-1234, Acme Corp"
 - "create contact John Smith with email john@example.com and phone 555-1234"
 - "add new contact: Jane Doe from Tech Solutions"
+
+Examples of ATTACH_LIST_TO_LISTING commands:
+- "attach the tech companies list to the downtown office listing"
+- "connect my investor list to the warehouse property"
+- "add the qualified leads list to listing 123"
+- "send the tech companies list to the downtown office"
+- "link investor list to warehouse property"
 
 User request: "${command}"
 
@@ -402,6 +420,11 @@ Respond with ONLY the JSON object, no other text.`;
       case 'CREATE_LIST':
         console.log('🔧 Handling CREATE_LIST...');
         result = await handleListCreation(intentAnalysis.extractedData, command);
+        break;
+        
+      case 'ATTACH_LIST_TO_LISTING':
+        console.log('🔧 Handling ATTACH_LIST_TO_LISTING...');
+        result = await handleAttachListToListing(intentAnalysis.extractedData, command);
         break;
         
       case 'GENERAL_QUERY':
@@ -1144,6 +1167,144 @@ async function handleListCreation(extractedData, originalCommand) {
       success: false,
       error: 'Failed to create the list. Please try again.',
       details: 'List creation failed'
+    };
+  }
+}
+
+// Helper function to handle attaching lists to listings
+async function handleAttachListToListing(extractedData, originalCommand) {
+  const { listIdentifier, listingIdentifier } = extractedData;
+  
+  console.log('🔍 Attach List to Listing Debug:', { listIdentifier, listingIdentifier });
+  
+  if (!listIdentifier || !listingIdentifier) {
+    return {
+      success: false,
+      error: 'Please specify both the list name and the listing to attach it to.',
+      details: 'Missing list or listing identifier',
+      suggestion: 'Try: "attach the tech companies list to the downtown office listing"'
+    };
+  }
+
+  try {
+    // Find the contact list
+    console.log('🔍 Searching for contact list:', listIdentifier);
+    const listsRef = db.collection('contactLists');
+    const listsSnapshot = await listsRef.get();
+    
+    let targetList = null;
+    for (const doc of listsSnapshot.docs) {
+      const listData = doc.data();
+      if (listData.name.toLowerCase().includes(listIdentifier.toLowerCase()) ||
+          listIdentifier.toLowerCase().includes(listData.name.toLowerCase())) {
+        targetList = { id: doc.id, ...listData };
+        break;
+      }
+    }
+
+    if (!targetList) {
+      return {
+        success: false,
+        error: `Contact list "${listIdentifier}" not found.`,
+        details: 'List not found',
+        suggestion: 'Please check the list name and try again.'
+      };
+    }
+
+    console.log('✅ Found contact list:', targetList.name);
+
+    // Find the listing
+    console.log('🔍 Searching for listing:', listingIdentifier);
+    const listingsRef = db.collection('listings');
+    const listingsSnapshot = await listingsRef.get();
+    
+    let targetListing = null;
+    for (const doc of listingsSnapshot.docs) {
+      const listingData = doc.data();
+      const listingName = listingData.name || listingData.address || listingData.streetAddress || listingData.title || '';
+      
+      if (listingName.toLowerCase().includes(listingIdentifier.toLowerCase()) ||
+          listingIdentifier.toLowerCase().includes(listingName.toLowerCase()) ||
+          doc.id.includes(listingIdentifier)) {
+        targetListing = { id: doc.id, ...listingData };
+        break;
+      }
+    }
+
+    if (!targetListing) {
+      return {
+        success: false,
+        error: `Listing "${listingIdentifier}" not found.`,
+        details: 'Listing not found',
+        suggestion: 'Please check the listing name/address and try again.'
+      };
+    }
+
+    console.log('✅ Found listing:', targetListing.name || targetListing.address);
+
+    // Check if the list is already attached to this listing
+    const currentContactListIds = targetListing.contactListIds || [];
+    if (currentContactListIds.includes(targetList.id)) {
+      return {
+        success: false,
+        error: `The list "${targetList.name}" is already attached to this listing.`,
+        details: 'List already attached'
+      };
+    }
+
+    // Attach the list to the listing
+    const updatedContactListIds = [...currentContactListIds, targetList.id];
+    
+    await listingsRef.doc(targetListing.id).update({
+      contactListIds: updatedContactListIds,
+      updatedAt: new Date()
+    });
+
+    console.log('✅ List attached to listing successfully');
+
+    // Log the action
+    await db.collection('ai_list_actions').add({
+      action: 'attach_list_to_listing',
+      listId: targetList.id,
+      listName: targetList.name,
+      listingId: targetListing.id,
+      listingName: listingDisplayName,
+      timestamp: new Date(),
+      success: true
+    });
+
+    // Determine the listing display name using the same logic as ListingSelector
+    const listingDisplayName = (() => {
+      if (targetListing.name && targetListing.name.trim()) {
+        return targetListing.name;
+      } else if (targetListing.address && targetListing.address.trim()) {
+        return targetListing.address;
+      } else if (targetListing.streetAddress && targetListing.streetAddress.trim()) {
+        return targetListing.streetAddress;
+      } else if (targetListing.title && targetListing.title.trim()) {
+        return targetListing.title;
+      } else {
+        return `Listing ${targetListing.id.slice(-6)}`;
+      }
+    })();
+
+    return {
+      success: true,
+      message: `✅ Attached list "${targetList.name}" to listing "${listingDisplayName}"`,
+      action: 'attach_list_to_listing',
+      listId: targetList.id,
+      listName: targetList.name,
+      listingId: targetListing.id,
+      listingName: listingDisplayName,
+      contactCount: targetList.contactIds ? targetList.contactIds.length : 0
+    };
+
+  } catch (error) {
+    console.error('❌ Error attaching list to listing:', error);
+    return {
+      success: false,
+      error: 'Failed to attach list to listing. Please try again.',
+      details: 'Database operation failed'
     };
   }
 }
