@@ -1115,12 +1115,32 @@ async function handleCombinedListCreationAndAttachment(extractedData, originalCo
     
     // Extract just the business sector from the criteria
     let searchTerm = listCriteria;
-    if (listCriteria.toLowerCase().includes('investor')) {
-      searchTerm = 'investor';
-    } else if (listCriteria.toLowerCase().includes('tech')) {
-      searchTerm = 'tech';
-    } else if (listCriteria.toLowerCase().includes('finance')) {
-      searchTerm = 'finance';
+    
+    // Extract business sector keywords from the criteria
+    const sectorKeywords = ['investor', 'tech', 'finance', 'retail', 'healthcare', 'education', 'real estate', 'consulting', 'manufacturing', 'hospitality', 'food', 'automotive', 'media', 'entertainment'];
+    
+    for (const keyword of sectorKeywords) {
+      if (listCriteria.toLowerCase().includes(keyword.toLowerCase())) {
+        searchTerm = keyword;
+        break;
+      }
+    }
+    
+    // If no specific sector found, try to extract from quotes or common patterns
+    if (searchTerm === listCriteria) {
+      const quoteMatch = listCriteria.match(/"([^"]+)"/);
+      if (quoteMatch) {
+        searchTerm = quoteMatch[1];
+      } else {
+        // Try to extract the last word that might be a sector
+        const words = listCriteria.toLowerCase().split(' ');
+        for (let i = words.length - 1; i >= 0; i--) {
+          if (sectorKeywords.includes(words[i])) {
+            searchTerm = words[i];
+            break;
+          }
+        }
+      }
     }
     
     logger.info('🔍 Simplified search term:', searchTerm);
