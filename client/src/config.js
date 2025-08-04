@@ -5,7 +5,7 @@ const isProduction = import.meta.env.PROD;
 // API base URL configuration
 export const API_BASE_URL = isDevelopment 
   ? 'http://localhost:3001' 
-  : 'https://us-central1-lod-crm-systems.cloudfunctions.net/api';
+  : 'https://us-central1-lod-crm-systems.cloudfunctions.net';
 
 // API endpoints
 export const ENDPOINTS = {

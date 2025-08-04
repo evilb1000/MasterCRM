@@ -25,17 +25,8 @@ const PORT = process.env.PORT || 3001;
 // Initialize OpenAI client
 console.log('🔧 Initializing OpenAI client...');
 
-// Get OpenAI API key from environment or Firebase Functions config
+// Get OpenAI API key from environment
 let openaiApiKey = process.env.OPENAI_API_KEY;
-if (!openaiApiKey && process.env.FIREBASE_FUNCTIONS) {
-  try {
-    const functions = require('firebase-functions');
-    openaiApiKey = functions.config().openai?.api_key;
-    console.log('🔧 Using Firebase Functions config for API key');
-  } catch (error) {
-    console.error('Failed to get Firebase Functions config:', error);
-  }
-}
 
 console.log('🔧 API Key length:', openaiApiKey ? openaiApiKey.length : 0);
 const openai = new OpenAI({
@@ -118,7 +109,7 @@ app.post('/chat', async (req, res) => {
     // Check if OpenAI API key is configured
     if (!openaiApiKey || openaiApiKey === 'your_openai_api_key_here') {
       return res.status(500).json({ 
-        error: 'OpenAI API key not configured. Please set OPENAI_API_KEY in your .env file or Firebase Functions config.' 
+        error: 'OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.' 
       });
     }
 

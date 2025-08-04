@@ -21,8 +21,18 @@ npm install
 ```
 
 ### 3. Set OpenAI API Key
+
+**Option A: Environment Variables (Recommended)**
+Create a `.env` file in the functions directory:
 ```bash
-firebase functions:config:set openai.api_key="your_openai_api_key_here"
+# Create .env file
+echo "OPENAI_API_KEY=your_openai_api_key_here" > .env
+```
+
+**Option B: Firebase Secret Manager (Alternative)**
+```bash
+firebase functions:secrets:set OPENAI_API_KEY
+# Then enter your API key when prompted
 ```
 
 ### 4. Build the Function
