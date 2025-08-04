@@ -205,6 +205,76 @@ export function isListCreationCommand(message) {
 }
 
 /**
+ * Check if a message is a combined list creation and attachment command
+ * @param {string} message - User message
+ * @returns {boolean} True if message contains combined list creation and attachment keywords
+ */
+export function isCombinedListCreationAndAttachmentCommand(message) {
+  const combinedPatterns = [
+    /create.*list.*with.*criteria.*attach.*to.*listing/i,
+    /create.*list.*with.*criteria.*then.*attach.*to.*listing/i,
+    /make.*list.*with.*criteria.*attach.*to.*listing/i,
+    /build.*list.*with.*criteria.*attach.*to.*listing/i,
+    /generate.*list.*with.*criteria.*attach.*to.*listing/i,
+    /create.*list.*with.*criteria.*and.*attach.*to.*listing/i,
+    /create.*list.*with.*criteria.*then.*attach.*to.*listing/i,
+    /create.*list.*with.*criteria.*and.*link.*to.*listing/i,
+    /create.*list.*with.*criteria.*then.*link.*to.*listing/i,
+    /create.*list.*with.*criteria.*and.*connect.*to.*listing/i,
+    /create.*list.*with.*criteria.*then.*connect.*to.*listing/i
+  ];
+  
+  const lowerMessage = message.toLowerCase();
+  
+  // Check for specific combined patterns
+  if (combinedPatterns.some(pattern => pattern.test(message))) {
+    return true;
+  }
+  
+  // Check for keywords that indicate both list creation and attachment
+  const hasListCreation = lowerMessage.includes('create') && lowerMessage.includes('list') && lowerMessage.includes('criteria');
+  const hasAttachment = (lowerMessage.includes('attach') || lowerMessage.includes('link') || lowerMessage.includes('connect')) && lowerMessage.includes('listing');
+  
+  return hasListCreation && hasAttachment;
+}
+
+/**
+ * Process combined list creation and attachment workflow
+ * @param {string} message - User's combined command
+ * @returns {Promise<Object>} Response with success/error information
+ */
+export async function processCombinedListCreationAndAttachment(message) {
+  try {
+    console.log('🔄 Processing combined list creation and attachment command:', message);
+    
+    // Send to the AI endpoint that can handle this combined workflow
+    const result = await handleAIContactAction(message);
+    
+    console.log('🔍 Combined workflow response:', result);
+    
+    // Standardize response format
+    return {
+      success: true,
+      data: result,
+      message: result.response || result.message || result.text || 'List created and attached successfully',
+      type: 'combined_list_creation_attachment',
+      listId: result.listId,
+      listName: result.listName,
+      listingId: result.listingId,
+      listingName: result.listingName,
+      contactCount: result.contactCount
+    };
+  } catch (error) {
+    console.error('❌ Combined workflow error:', error);
+    return {
+      success: false,
+      error: error.message,
+      type: 'combined_list_creation_attachment_error'
+    };
+  }
+}
+
+/**
  * Enhanced contact action handler with intent detection
  * @param {string} message - User message
  * @returns {Promise<Object>} Response with success/error information

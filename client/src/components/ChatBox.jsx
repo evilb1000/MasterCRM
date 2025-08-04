@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { ENDPOINTS } from '../config.js';
-import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation } from '../services/aiContactActions';
+import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation, isCombinedListCreationAndAttachmentCommand, processCombinedListCreationAndAttachment } from '../services/aiContactActions';
 
 // Helper function to check if a query is CRM-related
 function isCRMQuery(message) {
@@ -147,10 +147,12 @@ const ChatBox = ({ onShowLists }) => {
       let actionType = '';
 
       // Debug: Log which command type is detected
+      const isCombined = isCombinedListCreationAndAttachmentCommand(currentMessage);
       const isList = isListCreationCommand(currentMessage);
       const isContact = isContactActionCommand(currentMessage);
       console.log('🔍 Command Analysis:', {
         message: currentMessage,
+        isCombinedListCreationAndAttachment: isCombined,
         isListCreation: isList,
         isContactAction: isContact
       });
@@ -160,8 +162,20 @@ const ChatBox = ({ onShowLists }) => {
         console.log('🔍 Activity pattern detected in message:', currentMessage);
       }
 
+      // Check if this is a combined list creation and attachment command (highest priority)
+      if (isCombined) {
+        console.log('🔄 Routing to Combined List Creation and Attachment endpoint');
+        const result = await processCombinedListCreationAndAttachment(currentMessage);
+        
+        if (result.success) {
+          responseText = `${result.message}\n\nList Details:\n- Name: ${result.listName}\n- Contacts: ${result.contactCount}\n- ID: ${result.listId}\n\nListing Details:\n- Name: ${result.listingName}\n- ID: ${result.listingId}`;
+          actionType = 'combined_list_creation_attachment';
+        } else {
+          throw new Error(result.error);
+        }
+      }
       // Check if this is a list creation command
-      if (isList) {
+      else if (isList) {
         console.log('📋 Routing to List Creation endpoint');
         // Use AI List Creation endpoint
         const result = await processListCreation(currentMessage);

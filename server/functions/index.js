@@ -181,6 +181,7 @@ Available actions:
 - LIST_CONTACTS: User wants to see all contacts
 - CREATE_LIST: User wants to create a contact list based on criteria
 - ATTACH_LIST_TO_LISTING: User wants to attach an existing contact list to a listing
+- COMBINED_LIST_CREATION_AND_ATTACHMENT: User wants to create a contact list with criteria and then attach it to a listing in one command
 - GENERAL_QUERY: User is asking a general question about the CRM system
 
 Available contact fields: firstName, lastName, email, phone, company, address, businessSector, linkedin, notes
@@ -213,7 +214,7 @@ Contact identification can be by:
 
 Analyze the following user request and respond with ONLY a JSON object in this exact format:
 {
-  "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|GENERAL_QUERY",
+  "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|ATTACH_LIST_TO_LISTING|COMBINED_LIST_CREATION_AND_ATTACHMENT|GENERAL_QUERY",
   "confidence": 0.0-1.0,
   "extractedData": {
     "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
@@ -235,10 +236,18 @@ Analyze the following user request and respond with ONLY a JSON object in this e
     "listName": "suggested list name (if creating list)",
     "listCriteria": "description of what contacts to include in the list",
     "listIdentifier": "name of the list to attach (if attaching list to listing)",
-    "listingIdentifier": "name or address of the listing to attach to (if attaching list to listing)"
+    "listingIdentifier": "name or address of the listing to attach to (if attaching list to listing)",
+    "listName": "suggested list name (if creating list)",
+    "listCriteria": "description of what contacts to include in the list"
   },
   "userMessage": "A friendly response explaining what you understood they want to do"
 }
+
+Examples of COMBINED_LIST_CREATION_AND_ATTACHMENT:
+- "create a contact list with tech companies criteria, then attach that list to the downtown office listing"
+- "make a list with finance companies and attach it to listing 123 Main Street"
+- "build a list with investor contacts and attach to the warehouse listing"
+- "create a list with healthcare companies criteria, then attach that list to the medical building listing"
 
 If the request is unclear or doesn't match any action, set intent to GENERAL_QUERY and confidence to 0.0.
 
@@ -339,6 +348,11 @@ Respond with ONLY the JSON object, no other text.`;
         case 'ATTACH_LIST_TO_LISTING':
           logger.info('🔧 Handling ATTACH_LIST_TO_LISTING...');
           result = await handleAttachListToListing(intentAnalysis.extractedData, command);
+          break;
+          
+        case 'COMBINED_LIST_CREATION_AND_ATTACHMENT':
+          logger.info('🔧 Handling COMBINED_LIST_CREATION_AND_ATTACHMENT...');
+          result = await handleCombinedListCreationAndAttachment(intentAnalysis.extractedData, command);
           break;
           
         case 'GENERAL_QUERY':
@@ -1076,6 +1090,138 @@ async function handleListCreation(extractedData, originalCommand) {
       success: false,
       error: 'Failed to create the list. Please try again.',
       details: 'List creation failed'
+    };
+  }
+}
+
+// Helper function to handle combined list creation and attachment workflow
+async function handleCombinedListCreationAndAttachment(extractedData, originalCommand) {
+  const { listName, listCriteria, listingIdentifier } = extractedData;
+  
+  logger.info('🔄 Combined List Creation and Attachment Debug:', { listName, listCriteria, listingIdentifier });
+  
+  if (!listName || !listCriteria || !listingIdentifier) {
+    return {
+      success: false,
+      error: 'Please specify the list name, criteria, and the listing to attach it to.',
+      details: 'Missing list name, criteria, or listing identifier',
+      suggestion: 'Try: "create a contact list with tech companies criteria, then attach that list to the downtown office listing"'
+    };
+  }
+
+  try {
+    // Step 1: Create the list
+    logger.info('📋 Step 1: Creating list with criteria:', listCriteria);
+    
+    // Extract just the business sector from the criteria
+    let searchTerm = listCriteria;
+    if (listCriteria.toLowerCase().includes('investor')) {
+      searchTerm = 'investor';
+    } else if (listCriteria.toLowerCase().includes('tech')) {
+      searchTerm = 'tech';
+    } else if (listCriteria.toLowerCase().includes('finance')) {
+      searchTerm = 'finance';
+    }
+    
+    logger.info('🔍 Simplified search term:', searchTerm);
+    const contacts = await queryContactsByCriteria({ searchTerms: searchTerm });
+
+    if (contacts.length === 0) {
+      return {
+        success: false,
+        error: 'No contacts found matching your criteria.',
+        details: 'No contacts match the specified criteria'
+      };
+    }
+
+    // Create the list
+    const listData = {
+      name: listName,
+      contactIds: contacts.map(c => c.id),
+      createdAt: new Date(),
+      createdBy: 'AI',
+      description: `AI-generated list: ${listCriteria}`,
+      criteria: { searchTerms: listCriteria }
+    };
+
+    const listRef = await db.collection('contactLists').add(listData);
+    logger.info('✅ List created successfully:', listRef.id);
+
+    // Step 2: Find the listing
+    logger.info('🔍 Step 2: Searching for listing:', listingIdentifier);
+    const listingsRef = db.collection('listings');
+    const listingsSnapshot = await listingsRef.get();
+    
+    let targetListing = null;
+    for (const doc of listingsSnapshot.docs) {
+      const listingData = doc.data();
+      const listingName = listingData.name || listingData.address || listingData.streetAddress || listingData.title || '';
+      
+      if (listingName.toLowerCase().includes(listingIdentifier.toLowerCase()) ||
+          listingIdentifier.toLowerCase().includes(listingName.toLowerCase()) ||
+          doc.id.includes(listingIdentifier)) {
+        targetListing = { id: doc.id, ...listingData };
+        break;
+      }
+    }
+
+    if (!targetListing) {
+      return {
+        success: false,
+        error: `Listing "${listingIdentifier}" not found.`,
+        details: 'Listing not found',
+        suggestion: 'Please check the listing name/address and try again.'
+      };
+    }
+
+    logger.info('✅ Found listing:', targetListing.name || targetListing.address);
+
+    // Step 3: Attach the list to the listing
+    const currentContactListIds = targetListing.contactListIds || [];
+    if (currentContactListIds.includes(listRef.id)) {
+      return {
+        success: false,
+        error: `The list "${listName}" is already attached to this listing.`,
+        details: 'List already attached'
+      };
+    }
+
+    // Attach the list to the listing
+    const updatedContactListIds = [...currentContactListIds, listRef.id];
+    
+    await listingsRef.doc(targetListing.id).update({
+      contactListIds: updatedContactListIds,
+      updatedAt: new Date()
+    });
+
+    logger.info('✅ List attached to listing successfully');
+
+    // Log the combined action
+    await logListAction(originalCommand, 'combined_create_and_attach', listRef.id, listData);
+
+    return {
+      success: true,
+      message: `Successfully created list "${listName}" with ${contacts.length} contacts and attached it to the listing.`,
+      action: 'combined_create_and_attach',
+      listId: listRef.id,
+      listName: listName,
+      listingId: targetListing.id,
+      listingName: targetListing.name || targetListing.address,
+      contactCount: contacts.length,
+      contacts: contacts.map(c => ({
+        id: c.id,
+        name: `${c.data.firstName} ${c.data.lastName}`,
+        email: c.data.email,
+        company: c.data.company
+      }))
+    };
+
+  } catch (error) {
+    logger.error('❌ Error in combined list creation and attachment:', error);
+    return {
+      success: false,
+      error: 'Failed to create the list and attach it to the listing. Please try again.',
+      details: 'Combined workflow failed'
     };
   }
 }
