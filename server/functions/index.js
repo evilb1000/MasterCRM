@@ -378,6 +378,151 @@ Respond with ONLY the JSON object, no other text.`;
   }
 );
 
+// Get all listings endpoint (for dropdown selection)
+export const getListings = onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  // Only allow GET requests
+  if (req.method !== 'GET') {
+    res.status(405).json({ error: 'Method not allowed. Use GET.' });
+    return;
+  }
+
+  try {
+    logger.info('📋 Fetching listings for dropdown selection');
+    
+    const listingsRef = db.collection('listings');
+    const querySnapshot = await listingsRef.get();
+    
+    const listings = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    logger.info(`✅ Successfully fetched ${listings.length} listings`);
+
+    res.json({
+      success: true,
+      listings: listings
+    });
+
+  } catch (error) {
+    logger.error('❌ Error fetching listings:', error);
+    res.status(500).json({
+      error: 'Failed to fetch listings',
+      details: error.message
+    });
+  }
+});
+
+// Add contact list to listing endpoint
+export const addContactListToListing = onRequest(async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  // Only allow POST requests
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    return;
+  }
+
+  try {
+    const { listingId, contactListId } = req.body;
+
+    // Validate input
+    if (!listingId || !contactListId) {
+      return res.status(400).json({
+        error: 'Missing required fields: listingId and contactListId'
+      });
+    }
+
+    logger.info('🔗 Adding contact list to listing:', { listingId, contactListId });
+
+    // Get the listing document
+    const listingRef = db.collection('listings').doc(listingId);
+    const listingDoc = await listingRef.get();
+
+    if (!listingDoc.exists) {
+      return res.status(404).json({
+        error: 'Listing not found'
+      });
+    }
+
+    // Get the contact list document
+    const contactListRef = db.collection('contactLists').doc(contactListId);
+    const contactListDoc = await contactListRef.get();
+
+    if (!contactListDoc.exists) {
+      return res.status(404).json({
+        error: 'Contact list not found'
+      });
+    }
+
+    const listingData = listingDoc.data();
+    const currentContactListIds = listingData.contactListIds || [];
+
+    // Check if the contact list is already associated with this listing
+    if (currentContactListIds.includes(contactListId)) {
+      return res.status(400).json({
+        error: 'Contact list is already associated with this listing'
+      });
+    }
+
+    // Add the contact list ID to the listing
+    const updatedContactListIds = [...currentContactListIds, contactListId];
+    
+    await listingRef.update({
+      contactListIds: updatedContactListIds,
+      updatedAt: new Date()
+    });
+
+    logger.info('✅ Contact list added to listing successfully');
+
+    // Log the action
+    await db.collection('ai_list_actions').add({
+      action: 'add_contact_list_to_listing',
+      listingId: listingId,
+      contactListId: contactListId,
+      contactListName: contactListDoc.data().name,
+      listingName: listingData.name || listingData.address || 'Unknown Listing',
+      timestamp: new Date(),
+      success: true
+    });
+
+    res.json({
+      success: true,
+      message: `Contact list "${contactListDoc.data().name}" has been added to the listing`,
+      listingId: listingId,
+      contactListId: contactListId,
+      updatedContactListIds: updatedContactListIds
+    });
+
+  } catch (error) {
+    logger.error('❌ Error adding contact list to listing:', error);
+    res.status(500).json({
+      error: 'Failed to add contact list to listing',
+      details: error.message
+    });
+  }
+});
+
 // Helper function to find contact by identifier
 async function findContact(identifier) {
   logger.info('🔍 findContact called with identifier:', identifier);
