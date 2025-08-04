@@ -1017,7 +1017,20 @@ async function handleListCreation(extractedData, originalCommand) {
 
   try {
     // Query contacts based on criteria
-    const contacts = await queryContactsByCriteria({ searchTerms: listCriteria });
+    logger.info('🔍 List Creation Criteria:', { listCriteria, listName });
+    
+    // Extract just the business sector from the criteria
+    let searchTerm = listCriteria;
+    if (listCriteria.toLowerCase().includes('investor')) {
+      searchTerm = 'investor';
+    } else if (listCriteria.toLowerCase().includes('tech')) {
+      searchTerm = 'tech';
+    } else if (listCriteria.toLowerCase().includes('finance')) {
+      searchTerm = 'finance';
+    }
+    
+    logger.info('🔍 Simplified search term:', searchTerm);
+    const contacts = await queryContactsByCriteria({ searchTerms: searchTerm });
 
     if (contacts.length === 0) {
       return {
@@ -1249,6 +1262,8 @@ async function queryContactsByCriteria(criteria) {
   const contactsRef = db.collection('contacts');
   let query = contactsRef;
 
+  logger.info('🔍 Query Contacts Criteria:', criteria);
+
   // Apply filters based on criteria
   if (criteria.businessSector) {
     query = query.where('businessSector', '==', criteria.businessSector);
@@ -1277,12 +1292,16 @@ async function queryContactsByCriteria(criteria) {
     data: doc.data()
   }));
 
+  logger.info(`🔍 Found ${contacts.length} total contacts`);
+
   // Apply search terms filter if specified
   if (criteria.searchTerms) {
     const searchTerms = criteria.searchTerms.toLowerCase();
+    logger.info(`🔍 Filtering by search terms: "${searchTerms}"`);
+    
     contacts = contacts.filter(contact => {
       const data = contact.data;
-      return (
+      const matches = (
         (data.firstName && data.firstName.toLowerCase().includes(searchTerms)) ||
         (data.lastName && data.lastName.toLowerCase().includes(searchTerms)) ||
         (data.email && data.email.toLowerCase().includes(searchTerms)) ||
@@ -1290,7 +1309,15 @@ async function queryContactsByCriteria(criteria) {
         (data.businessSector && data.businessSector.toLowerCase().includes(searchTerms)) ||
         (data.notes && data.notes.toLowerCase().includes(searchTerms))
       );
+      
+      if (matches) {
+        logger.info(`🔍 Contact matches: ${data.firstName} ${data.lastName} - businessSector: "${data.businessSector}"`);
+      }
+      
+      return matches;
     });
+    
+    logger.info(`🔍 After filtering: ${contacts.length} contacts match`);
   }
 
   return contacts;

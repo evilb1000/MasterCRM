@@ -53,7 +53,7 @@ export async function handleAIListCreation(description) {
   
   try {
     const response = await axios.post(endpoint, { 
-      description: description 
+      command: description 
     });
     
     return response.data;
@@ -238,6 +238,8 @@ export async function processListCreation(description) {
   try {
     const result = await handleAIListCreation(description);
     
+    console.log('🔍 List Creation Response:', result);
+    
     // Standardize response format
     return {
       success: true,
@@ -250,6 +252,7 @@ export async function processListCreation(description) {
       contacts: result.contacts
     };
   } catch (error) {
+    console.error('❌ List Creation Error:', error);
     return {
       success: false,
       error: error.message,
