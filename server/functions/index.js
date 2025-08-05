@@ -182,6 +182,7 @@ Available actions:
 - CREATE_LIST: User wants to create a contact list based on criteria
 - ATTACH_LIST_TO_LISTING: User wants to attach an existing contact list to a listing
 - COMBINED_LIST_CREATION_AND_ATTACHMENT: User wants to create a contact list with criteria and then attach it to a listing in one command
+- COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT: User wants to create an activity for a contact and then attach it to a listing in one command
 - GENERAL_QUERY: User is asking a general question about the CRM system
 
 Available contact fields: firstName, lastName, email, phone, company, address, businessSector, linkedin, notes
@@ -214,11 +215,11 @@ Contact identification can be by:
 
 Analyze the following user request and respond with ONLY a JSON object in this exact format:
 {
-  "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|ATTACH_LIST_TO_LISTING|COMBINED_LIST_CREATION_AND_ATTACHMENT|GENERAL_QUERY",
+        "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|ATTACH_LIST_TO_LISTING|COMBINED_LIST_CREATION_AND_ATTACHMENT|COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT|GENERAL_QUERY",
   "confidence": 0.0-1.0,
   "extractedData": {
     "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
-    "action": "update|add_note|create_activity|create|delete|search|list|create_list|attach_list_to_listing",
+          "action": "update|add_note|create_activity|create|delete|search|list|create_list|attach_list_to_listing|combined_activity_creation_and_listing_attachment",
     "field": "fieldName (if mentioned)",
     "value": "new value (if mentioned)",
     "firstName": "first name (if creating contact)",
@@ -248,6 +249,11 @@ Examples of COMBINED_LIST_CREATION_AND_ATTACHMENT:
 - "make a list with finance companies and attach it to listing 123 Main Street"
 - "build a list with investor contacts and attach to the warehouse listing"
 - "create a list with healthcare companies criteria, then attach that list to the medical building listing"
+
+Examples of COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT:
+- "create a call activity for John Smith and attach it to 420 Main St"
+- "log an email activity for Elodie Wren and connect it to the downtown office"
+- "add a meeting activity for Tom Brady and attach to the shopping center listing"
 
 If the request is unclear or doesn't match any action, set intent to GENERAL_QUERY and confidence to 0.0.
 
@@ -353,6 +359,10 @@ Respond with ONLY the JSON object, no other text.`;
         case 'COMBINED_LIST_CREATION_AND_ATTACHMENT':
           logger.info('🔧 Handling COMBINED_LIST_CREATION_AND_ATTACHMENT...');
           result = await handleCombinedListCreationAndAttachment(intentAnalysis.extractedData, command);
+          break;
+        case 'COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT':
+          logger.info('🔧 Handling COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT...');
+          result = await handleCombinedActivityCreationAndListingAttachment(intentAnalysis.extractedData, command);
           break;
           
         case 'GENERAL_QUERY':
@@ -1246,6 +1256,163 @@ async function handleCombinedListCreationAndAttachment(extractedData, originalCo
   }
 }
 
+// Helper function to handle combined activity creation and listing attachment
+async function handleCombinedActivityCreationAndListingAttachment(extractedData, originalCommand) {
+  const { contactIdentifier, activityType, activityDescription, listingIdentifier } = extractedData;
+  
+  logger.info('🔍 Combined Activity Creation and Listing Attachment Debug:', { contactIdentifier, activityType, activityDescription, listingIdentifier });
+  
+  if (!contactIdentifier || !activityType || !listingIdentifier) {
+    return {
+      success: false,
+      error: 'Please specify the contact, activity type, and listing to attach the activity to.',
+      details: 'Missing required parameters',
+      suggestion: 'Try: "create a call activity for John Smith and attach it to 420 Main St"'
+    };
+  }
+
+  try {
+    // Step 1: Find the contact
+    logger.info('👤 Step 1: Finding contact:', contactIdentifier);
+    const contact = await findContact(contactIdentifier);
+    
+    if (!contact) {
+      return {
+        success: false,
+        error: `Contact "${contactIdentifier}" not found.`,
+        details: 'Contact not found',
+        suggestion: 'Please check the contact name/email and try again.'
+      };
+    }
+
+    logger.info('✅ Found contact:', contact.data.firstName + ' ' + contact.data.lastName);
+
+    // Step 2: Create the activity
+    logger.info('📝 Step 2: Creating activity:', activityType);
+    
+    const activityData = {
+      contactId: contact.id,
+      type: activityType,
+      description: activityDescription || `Activity with ${contact.data.firstName} ${contact.data.lastName}`,
+      date: new Date(),
+      createdAt: new Date(),
+      createdBy: 'AI'
+    };
+
+    const activityRef = await db.collection('activities').add(activityData);
+    logger.info('✅ Activity created successfully:', activityRef.id);
+
+    // Step 3: Find the listing
+    logger.info('🏢 Step 3: Searching for listing:', listingIdentifier);
+    const listingsRef = db.collection('listings');
+    const listingsSnapshot = await listingsRef.get();
+    
+    let targetListing = null;
+    for (const doc of listingsSnapshot.docs) {
+      const listingData = doc.data();
+      const listingName = listingData.name || listingData.address || listingData.streetAddress || listingData.title || '';
+      
+      if (listingName.toLowerCase().includes(listingIdentifier.toLowerCase()) ||
+          listingIdentifier.toLowerCase().includes(listingName.toLowerCase()) ||
+          doc.id.includes(listingIdentifier)) {
+        targetListing = { id: doc.id, ...listingData };
+        break;
+      }
+    }
+
+    if (!targetListing) {
+      return {
+        success: false,
+        error: `Listing "${listingIdentifier}" not found.`,
+        details: 'Listing not found',
+        suggestion: 'Please check the listing name/address and try again.'
+      };
+    }
+
+    logger.info('✅ Found listing:', targetListing.name || targetListing.address);
+    logger.info('🔍 Full listing data:', JSON.stringify(targetListing, null, 2));
+
+    // Step 4: Update the activity with listing information
+    await activityRef.update({
+      listingId: targetListing.id,
+      listingName: (() => {
+        if (targetListing.name && targetListing.name.trim()) {
+          return targetListing.name;
+        } else if (targetListing.address && targetListing.address.trim()) {
+          return targetListing.address;
+        } else if (targetListing.streetAddress && targetListing.streetAddress.trim()) {
+          return targetListing.streetAddress;
+        } else if (targetListing.title && targetListing.title.trim()) {
+          return targetListing.title;
+        } else {
+          return `Listing ${targetListing.id.slice(-6)}`;
+        }
+      })()
+    });
+
+    logger.info('✅ Activity updated with listing information');
+
+    // Step 5: Add activity to listing's activityIds array
+    const currentActivityIds = targetListing.activityIds || [];
+    if (currentActivityIds.includes(activityRef.id)) {
+      return {
+        success: false,
+        error: `This activity is already attached to this listing.`,
+        details: 'Activity already attached'
+      };
+    }
+
+    // Attach the activity to the listing
+    const updatedActivityIds = [...currentActivityIds, activityRef.id];
+    
+    await listingsRef.doc(targetListing.id).update({
+      activityIds: updatedActivityIds,
+      updatedAt: new Date()
+    });
+
+    logger.info('✅ Activity attached to listing successfully');
+
+    // Log the combined action
+    await logAction(originalCommand, 'combined_activity_and_listing', contact.id, contact.data, 'activity', activityType);
+
+    // Determine the listing display name using the same logic as contact lists
+    const listingDisplayName = (() => {
+      if (targetListing.name && targetListing.name.trim()) {
+        return targetListing.name;
+      } else if (targetListing.address && targetListing.address.trim()) {
+        return targetListing.address;
+      } else if (targetListing.streetAddress && targetListing.streetAddress.trim()) {
+        return targetListing.streetAddress;
+      } else if (targetListing.title && targetListing.title.trim()) {
+        return targetListing.title;
+      } else {
+        return `Listing ${targetListing.id.slice(-6)}`;
+      }
+    })();
+
+    return {
+      success: true,
+      message: `Successfully created ${activityType} activity for ${contact.data.firstName} ${contact.data.lastName} and attached it to the listing.`,
+      action: 'combined_activity_and_listing',
+      activityId: activityRef.id,
+      activityType: activityType,
+      contactId: contact.id,
+      contactName: `${contact.data.firstName} ${contact.data.lastName}`,
+      listingId: targetListing.id,
+      listingName: listingDisplayName,
+      activityDescription: activityData.description
+    };
+
+  } catch (error) {
+    logger.error('❌ Error in combined activity creation and listing attachment:', error);
+    return {
+      success: false,
+      error: 'Failed to create the activity and attach it to the listing. Please try again.',
+      details: 'Combined workflow failed'
+    };
+  }
+}
+
 // Helper function to handle attaching lists to listings
 async function handleAttachListToListing(extractedData, originalCommand) {
   const { listIdentifier, listingIdentifier } = extractedData;
@@ -1541,7 +1708,31 @@ export const createActivity = onRequest(async (req, res) => {
     activityData.createdAt = FieldValue.serverTimestamp();
     activityData.updatedAt = FieldValue.serverTimestamp();
 
-    logger.info('📝 Creating new activity:', { type: activityData.type, contactId: activityData.contactId });
+    // Add listing connection if requested
+    if (activityData.connectToListing && activityData.selectedListing) {
+      activityData.listingId = activityData.selectedListing.id;
+      activityData.listingName = (() => {
+        if (activityData.selectedListing.name && activityData.selectedListing.name.trim()) {
+          return activityData.selectedListing.name;
+        } else if (activityData.selectedListing.address && activityData.selectedListing.address.trim()) {
+          return activityData.selectedListing.address;
+        } else if (activityData.selectedListing.streetAddress && activityData.selectedListing.streetAddress.trim()) {
+          return activityData.selectedListing.streetAddress;
+        } else if (activityData.selectedListing.title && activityData.selectedListing.title.trim()) {
+          return activityData.selectedListing.title;
+        } else {
+          return `Listing ${activityData.selectedListing.id.slice(-6)}`;
+        }
+      })();
+    }
+
+    logger.info('📝 Creating new activity:', { 
+      type: activityData.type, 
+      contactId: activityData.contactId,
+      connectToListing: activityData.connectToListing,
+      selectedListing: activityData.selectedListing,
+      listingId: activityData.listingId || null
+    });
 
     // Save to Firestore
     const activityRef = await db.collection('activities').add(activityData);

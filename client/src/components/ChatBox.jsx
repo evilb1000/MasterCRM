@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { ENDPOINTS } from '../config.js';
-import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation, isCombinedListCreationAndAttachmentCommand, processCombinedListCreationAndAttachment } from '../services/aiContactActions';
+import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation, isCombinedListCreationAndAttachmentCommand, processCombinedListCreationAndAttachment, isCombinedActivityCreationAndListingAttachmentCommand, processCombinedActivityCreationAndListingAttachment } from '../services/aiContactActions';
 
 // Helper function to check if a query is CRM-related
 function isCRMQuery(message) {
@@ -147,12 +147,14 @@ const ChatBox = ({ onShowLists }) => {
       let actionType = '';
 
       // Debug: Log which command type is detected
-      const isCombined = isCombinedListCreationAndAttachmentCommand(currentMessage);
+      const isCombinedList = isCombinedListCreationAndAttachmentCommand(currentMessage);
+      const isCombinedActivity = isCombinedActivityCreationAndListingAttachmentCommand(currentMessage);
       const isList = isListCreationCommand(currentMessage);
       const isContact = isContactActionCommand(currentMessage);
       console.log('🔍 Command Analysis:', {
         message: currentMessage,
-        isCombinedListCreationAndAttachment: isCombined,
+        isCombinedListCreationAndAttachment: isCombinedList,
+        isCombinedActivityCreationAndListingAttachment: isCombinedActivity,
         isListCreation: isList,
         isContactAction: isContact
       });
@@ -162,8 +164,20 @@ const ChatBox = ({ onShowLists }) => {
         console.log('🔍 Activity pattern detected in message:', currentMessage);
       }
 
-      // Check if this is a combined list creation and attachment command (highest priority)
-      if (isCombined) {
+      // Check if this is a combined activity creation and listing attachment command (highest priority)
+      if (isCombinedActivity) {
+        console.log('🔄 Routing to Combined Activity Creation and Listing Attachment endpoint');
+        const result = await processCombinedActivityCreationAndListingAttachment(currentMessage);
+        
+        if (result.success) {
+          responseText = `${result.message}\n\nActivity Details:\n- Type: ${result.activityType}\n- Contact: ${result.contactName}\n- Description: ${result.activityDescription}\n- Activity ID: ${result.activityId}\n\nListing Details:\n- Name: ${result.listingName}\n- ID: ${result.listingId}`;
+          actionType = 'combined_activity_creation_listing_attachment';
+        } else {
+          throw new Error(result.error);
+        }
+      }
+      // Check if this is a combined list creation and attachment command
+      else if (isCombinedList) {
         console.log('🔄 Routing to Combined List Creation and Attachment endpoint');
         const result = await processCombinedListCreationAndAttachment(currentMessage);
         

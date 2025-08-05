@@ -1520,6 +1520,13 @@ app.post('/activities', async (req, res) => {
       updatedAt: new Date()
     };
 
+    console.log('🔍 Server activity creation debug:', {
+      connectToListing,
+      selectedListing,
+      selectedListingType: typeof selectedListing,
+      selectedListingKeys: selectedListing ? Object.keys(selectedListing) : null
+    });
+    
     // Add listing connection if requested
     if (connectToListing && selectedListing) {
       activityData.listingId = selectedListing.id;

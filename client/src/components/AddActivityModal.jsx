@@ -6,7 +6,7 @@ const AddActivityModal = ({ open, onClose, contact, onActivityAdded }) => {
   const [activityType, setActivityType] = useState('call');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
-  const [connectToListing, setConnectToListing] = useState(false);
+  const [connectToListing, setConnectToListing] = useState(true);
   const [selectedListing, setSelectedListing] = useState(null);
   const [listingSelectorOpen, setListingSelectorOpen] = useState(false);
 
@@ -37,6 +37,12 @@ const AddActivityModal = ({ open, onClose, contact, onActivityAdded }) => {
         connectToListing: connectToListing,
         selectedListing: selectedListing
       };
+      
+      console.log('🔍 Activity creation debug:', {
+        connectToListing,
+        selectedListing,
+        activityData
+      });
 
       const result = await createActivity(activityData);
       
@@ -182,7 +188,7 @@ const AddActivityModal = ({ open, onClose, contact, onActivityAdded }) => {
               <button
                 type="submit"
                 style={styles.submitButton}
-                disabled={loading || !description.trim()}
+                disabled={loading || !description.trim() || (connectToListing && !selectedListing)}
               >
                 {loading ? 'Adding...' : 'Add Activity'}
               </button>

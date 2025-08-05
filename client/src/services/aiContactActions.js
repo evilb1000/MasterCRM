@@ -205,6 +205,35 @@ export function isListCreationCommand(message) {
 }
 
 /**
+ * Check if a message is a combined activity creation and listing attachment command
+ * @param {string} message - User message
+ * @returns {boolean} True if message contains combined activity creation and listing attachment keywords
+ */
+export function isCombinedActivityCreationAndListingAttachmentCommand(message) {
+  const combinedPatterns = [
+    /(emailed|called|texted|met with|toured|showed).*for.*listing/i,
+    /(emailed|called|texted|met with|toured|showed).*at.*listing/i,
+    /(emailed|called|texted|met with|toured|showed).*about.*for.*listing/i,
+    /(emailed|called|texted|met with|toured|showed).*regarding.*listing/i,
+    /(emailed|called|texted|met with|toured|showed).*concerning.*listing/i,
+    /(emailed|called|texted|met with|toured|showed).*with.*at.*listing/i
+  ];
+  
+  const lowerMessage = message.toLowerCase();
+  
+  // Check for specific combined patterns
+  if (combinedPatterns.some(pattern => pattern.test(message))) {
+    return true;
+  }
+  
+  // Check for keywords that indicate both activity creation and listing attachment
+  const hasActivity = (lowerMessage.includes('emailed') || lowerMessage.includes('called') || lowerMessage.includes('texted') || lowerMessage.includes('met with') || lowerMessage.includes('toured') || lowerMessage.includes('showed'));
+  const hasListing = lowerMessage.includes('listing') || lowerMessage.includes('at') || lowerMessage.includes('for') || lowerMessage.includes('about');
+  
+  return hasActivity && hasListing;
+}
+
+/**
  * Check if a message is a combined list creation and attachment command
  * @param {string} message - User message
  * @returns {boolean} True if message contains combined list creation and attachment keywords
@@ -236,6 +265,44 @@ export function isCombinedListCreationAndAttachmentCommand(message) {
   const hasAttachment = (lowerMessage.includes('attach') || lowerMessage.includes('link') || lowerMessage.includes('connect')) && lowerMessage.includes('listing');
   
   return hasListCreation && hasAttachment;
+}
+
+/**
+ * Process combined activity creation and listing attachment workflow
+ * @param {string} message - User's combined command
+ * @returns {Promise<Object>} Response with success/error information
+ */
+export async function processCombinedActivityCreationAndListingAttachment(message) {
+  try {
+    console.log('🔄 Processing combined activity creation and listing attachment command:', message);
+    
+    // Send to the AI endpoint that can handle this combined workflow
+    const result = await handleAIContactAction(message);
+    
+    console.log('🔍 Combined activity workflow response:', result);
+    
+    // Standardize response format
+    return {
+      success: true,
+      data: result,
+      message: result.response || result.message || result.text || 'Activity created and attached successfully',
+      type: 'combined_activity_creation_listing_attachment',
+      activityId: result.activityId,
+      activityType: result.activityType,
+      contactId: result.contactId,
+      contactName: result.contactName,
+      listingId: result.listingId,
+      listingName: result.listingName,
+      activityDescription: result.activityDescription
+    };
+  } catch (error) {
+    console.error('❌ Combined activity workflow error:', error);
+    return {
+      success: false,
+      error: error.message,
+      type: 'combined_activity_creation_listing_attachment_error'
+    };
+  }
 }
 
 /**
