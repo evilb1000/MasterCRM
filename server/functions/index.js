@@ -8,7 +8,6 @@
  */
 
 import { onRequest } from "firebase-functions/v2/https";
-import { defineSecret } from "firebase-functions/params";
 import * as logger from "firebase-functions/logger";
 import { initializeApp, applicationDefault } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
@@ -18,12 +17,8 @@ import OpenAI from "openai";
 initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
 
-// Define the secret
-const openaiApiSecret = defineSecret("OPENAI_API_KEY");
-
 // Chat Cloud Function
 export const chat = onRequest(
-  { secrets: [openaiApiSecret] },
   async (req, res) => {
     // Enable CORS
     res.set('Access-Control-Allow-Origin', '*');
@@ -53,7 +48,7 @@ export const chat = onRequest(
       }
 
       // Get the secret value
-      const apiKey = openaiApiSecret.value();
+      const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) {
         return res.status(500).json({ 
           error: 'OpenAI API key not configured. Please set OPENAI_API_KEY secret.' 
@@ -122,7 +117,6 @@ export const chat = onRequest(
 
 // AI Contact Action function
 export const aiContactAction = onRequest(
-  { secrets: [openaiApiSecret] },
   async (req, res) => {
     // Enable CORS
     res.set('Access-Control-Allow-Origin', '*');
@@ -155,7 +149,7 @@ export const aiContactAction = onRequest(
       }
 
       // Get the secret value
-      const apiKey = openaiApiSecret.value();
+      const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) {
         return res.status(500).json({ 
           error: 'OpenAI API key not configured. Please set OPENAI_API_KEY secret.' 
@@ -174,7 +168,7 @@ You are a CRM assistant that analyzes user requests and determines what they wan
 Available actions:
 - UPDATE_CONTACT: User wants to update existing contact information (edit, change, modify, set, update)
 - ADD_NOTE: User wants to add a note to an existing contact (add note, append note, include note)
-- CREATE_ACTIVITY: User wants to log an activity for a contact (called, emailed, met with, texted, showed property to)
+- CREATE_ACTIVITY: User wants to log an activity for a contact WITHOUT attaching to a listing (called, emailed, met with, texted, showed property to)
 - CREATE_CONTACT: User wants to create a new contact
 - DELETE_CONTACT: User wants to delete a contact or contact field
 - SEARCH_CONTACT: User wants to find or search for contacts
@@ -182,8 +176,10 @@ Available actions:
 - CREATE_LIST: User wants to create a contact list based on criteria
 - ATTACH_LIST_TO_LISTING: User wants to attach an existing contact list to a listing
 - COMBINED_LIST_CREATION_AND_ATTACHMENT: User wants to create a contact list with criteria and then attach it to a listing in one command
-- COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT: User wants to create an activity for a contact and then attach it to a listing in one command
+- COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT: User wants to create an activity for a contact AND attach it to a listing in one command
 - GENERAL_QUERY: User is asking a general question about the CRM system
+
+**CRITICAL: Use COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT when a listing is mentioned in the activity. Use CREATE_ACTIVITY only when NO listing is mentioned.**
 
 Available contact fields: firstName, lastName, email, phone, company, address, businessSector, linkedin, notes
 
@@ -208,10 +204,40 @@ IMPORTANT: For ADD_NOTE, look for these patterns:
 - "add [note content] to [contact]"
 - "[contact] - [note content]"
 
+IMPORTANT: For CREATE_ACTIVITY and COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT, look for these NATURAL LANGUAGE patterns:
+
+**COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT** (when listing is mentioned):
+- "Emailed [contact] about [listing]. [description]"
+- "Called [contact] regarding [listing]. [description]"
+- "Met with [contact] at [listing]. [description]"
+- "Texted [contact] about [listing]. [description]"
+- "Showed [listing] to [contact]. [description]"
+- "Spoke with [contact] about [listing]. [description]"
+- "Contacted [contact] regarding [listing]. [description]"
+- "Reached out to [contact] about [listing]. [description]"
+- "[contact] and I discussed [listing]. [description]"
+- "Had a [activity_type] with [contact] about [listing]. [description]"
+
+**CREATE_ACTIVITY** (when NO listing is mentioned):
+- "Emailed [contact]. [description]"
+- "Called [contact]. [description]"
+- "Met with [contact]. [description]"
+- "Texted [contact]. [description]"
+
+Activity type detection from context:
+- "emailed", "email", "sent email" → email
+- "called", "phone call", "phoned" → call
+- "met", "meeting", "coffee", "lunch" → meeting
+- "texted", "text", "SMS", "messaged" → text
+- "showed", "tour", "property showing" → showing
+- "follow up", "follow-up", "followup" → follow_up
+- Default to "other" if unclear
+
 Contact identification can be by:
 - Email address (contains @)
 - Full name (firstName + lastName)
 - Company name
+- Partial name matching (e.g., "Jeff" matches "Jeff Burd")
 
 Analyze the following user request and respond with ONLY a JSON object in this exact format:
 {
@@ -233,6 +259,8 @@ Analyze the following user request and respond with ONLY a JSON object in this e
     "notes": "notes (if creating contact)",
     "activityType": "call|email|meeting|text|showing|follow_up|other (if creating activity)",
     "activityDescription": "description of the activity (if creating activity)",
+    "contactName": "full name of the contact (if creating activity)",
+    "listingName": "name or address of the listing (if creating activity)",
     "query": "search terms (if searching)",
     "listName": "suggested list name (if creating list)",
     "listCriteria": "description of what contacts to include in the list",
@@ -254,6 +282,15 @@ Examples of COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT:
 - "create a call activity for John Smith and attach it to 420 Main St"
 - "log an email activity for Elodie Wren and connect it to the downtown office"
 - "add a meeting activity for Tom Brady and attach to the shopping center listing"
+- "Emailed Jeff Burd about 420 Main Street. Asked if he wanted to tour."
+- "Called John Smith regarding the downtown office. Discussed lease terms."
+- "Met with Elodie Wren at the shopping center. Showed her the space."
+- "Texted Tom Brady about the warehouse listing. He's interested in touring."
+- "Spoke with Jeff Burd about 420 Main Street. He asked about parking."
+- "Contacted John Smith regarding the office building. Sent him the floor plan."
+- "Reached out to Elodie Wren about the retail space. She wants to see it next week."
+- "Jeff Burd and I discussed 420 Main Street. He's considering a tour."
+- "Had a meeting with John Smith about the downtown office. Talked about square footage."
 
 If the request is unclear or doesn't match any action, set intent to GENERAL_QUERY and confidence to 0.0.
 
@@ -1258,11 +1295,19 @@ async function handleCombinedListCreationAndAttachment(extractedData, originalCo
 
 // Helper function to handle combined activity creation and listing attachment
 async function handleCombinedActivityCreationAndListingAttachment(extractedData, originalCommand) {
-  const { contactIdentifier, activityType, activityDescription, listingIdentifier } = extractedData;
+  const { contactIdentifier, contactName, activityType, activityDescription, listingIdentifier, listingName } = extractedData;
   
-  logger.info('🔍 Combined Activity Creation and Listing Attachment Debug:', { contactIdentifier, activityType, activityDescription, listingIdentifier });
+  logger.info('🔍 Combined Activity Creation and Listing Attachment Debug:', { 
+    contactIdentifier, 
+    contactName,
+    activityType, 
+    activityDescription, 
+    listingIdentifier,
+    listingName,
+    fullExtractedData: extractedData 
+  });
   
-  if (!contactIdentifier || !activityType || !listingIdentifier) {
+  if (!contactIdentifier || !activityType || (!listingIdentifier && !listingName)) {
     return {
       success: false,
       error: 'Please specify the contact, activity type, and listing to attach the activity to.',
@@ -1272,9 +1317,10 @@ async function handleCombinedActivityCreationAndListingAttachment(extractedData,
   }
 
   try {
-    // Step 1: Find the contact
-    logger.info('👤 Step 1: Finding contact:', contactIdentifier);
-    const contact = await findContact(contactIdentifier);
+      // Step 1: Find the contact
+  const contactToFind = contactName || contactIdentifier;
+  logger.info('👤 Step 1: Finding contact:', contactToFind);
+  const contact = await findContact(contactToFind);
     
     if (!contact) {
       return {
@@ -1293,7 +1339,7 @@ async function handleCombinedActivityCreationAndListingAttachment(extractedData,
     const activityData = {
       contactId: contact.id,
       type: activityType,
-      description: activityDescription || `Activity with ${contact.data.firstName} ${contact.data.lastName}`,
+      description: activityDescription || originalCommand || `Activity with ${contact.data.firstName} ${contact.data.lastName}`,
       date: new Date(),
       createdAt: new Date(),
       createdBy: 'AI'
@@ -1302,23 +1348,24 @@ async function handleCombinedActivityCreationAndListingAttachment(extractedData,
     const activityRef = await db.collection('activities').add(activityData);
     logger.info('✅ Activity created successfully:', activityRef.id);
 
-    // Step 3: Find the listing
-    logger.info('🏢 Step 3: Searching for listing:', listingIdentifier);
-    const listingsRef = db.collection('listings');
-    const listingsSnapshot = await listingsRef.get();
+      // Step 3: Find the listing
+  const listingToFind = listingName || listingIdentifier;
+  logger.info('🏢 Step 3: Searching for listing:', listingToFind);
+  const listingsRef = db.collection('listings');
+  const listingsSnapshot = await listingsRef.get();
+  
+  let targetListing = null;
+  for (const doc of listingsSnapshot.docs) {
+    const listingData = doc.data();
+    const listingDisplayName = listingData.name || listingData.address || listingData.streetAddress || listingData.title || '';
     
-    let targetListing = null;
-    for (const doc of listingsSnapshot.docs) {
-      const listingData = doc.data();
-      const listingName = listingData.name || listingData.address || listingData.streetAddress || listingData.title || '';
-      
-      if (listingName.toLowerCase().includes(listingIdentifier.toLowerCase()) ||
-          listingIdentifier.toLowerCase().includes(listingName.toLowerCase()) ||
-          doc.id.includes(listingIdentifier)) {
-        targetListing = { id: doc.id, ...listingData };
-        break;
-      }
+    if (listingDisplayName.toLowerCase().includes(listingToFind.toLowerCase()) ||
+        listingToFind.toLowerCase().includes(listingDisplayName.toLowerCase()) ||
+        doc.id.includes(listingToFind)) {
+      targetListing = { id: doc.id, ...listingData };
+      break;
     }
+  }
 
     if (!targetListing) {
       return {
@@ -1555,7 +1602,7 @@ async function handleAttachListToListing(extractedData, originalCommand) {
 async function handleGeneralQuery(originalCommand) {
   // Use the regular chat endpoint for general queries
   try {
-    const apiKey = openaiApiSecret.value();
+    const apiKey = process.env.OPENAI_API_KEY;
     const openai = new OpenAI({
       apiKey: apiKey,
     });
