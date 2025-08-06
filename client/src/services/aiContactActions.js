@@ -397,3 +397,91 @@ export async function processListCreation(description) {
     };
   }
 } 
+
+/**
+ * Check if a message is a business prospecting command
+ * @param {string} message - User message
+ * @returns {boolean} True if message contains business prospecting keywords
+ */
+export function isBusinessProspectingCommand(message) {
+  const prospectingKeywords = [
+    'find', 'search', 'prospect', 'locate', 'get',
+    'businesses', 'companies', 'business', 'company'
+  ];
+  
+  const locationKeywords = [
+    'in', 'at', 'near', 'around', 'within', 'located in'
+  ];
+  
+  const businessCategoryKeywords = [
+    'financial services', 'restaurants', 'tech', 'healthcare', 'manufacturing',
+    'retail', 'construction', 'real estate', 'legal', 'accounting',
+    'insurance', 'banking', 'consulting', 'marketing', 'advertising'
+  ];
+  
+  const lowerMessage = message.toLowerCase();
+  
+  // Check for business prospecting patterns
+  const prospectingPatterns = [
+    /find.*businesses?.*in/i,
+    /search.*for.*businesses?.*in/i,
+    /prospect.*businesses?.*in/i,
+    /locate.*businesses?.*in/i,
+    /find.*companies?.*in/i,
+    /search.*for.*companies?.*in/i,
+    /prospect.*companies?.*in/i,
+    /locate.*companies?.*in/i,
+    /find.*\w+.*in/i,
+    /search.*for.*\w+.*in/i,
+    /prospect.*\w+.*in/i,
+    /locate.*\w+.*in/i
+  ];
+  
+  // Check for specific patterns first
+  if (prospectingPatterns.some(pattern => pattern.test(message))) {
+    return true;
+  }
+  
+  // Check for keywords that indicate business prospecting
+  const hasProspectingKeyword = prospectingKeywords.some(keyword => lowerMessage.includes(keyword));
+  const hasLocationKeyword = locationKeywords.some(keyword => lowerMessage.includes(keyword));
+  const hasBusinessCategory = businessCategoryKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  // Must have prospecting keyword and location keyword, or business category
+  return hasProspectingKeyword && (hasLocationKeyword || hasBusinessCategory);
+}
+
+/**
+ * Process business prospecting workflow
+ * @param {string} message - User's business prospecting command
+ * @returns {Promise<Object>} Response with success/error information
+ */
+export async function processBusinessProspecting(message) {
+  try {
+    console.log('🔄 Processing business prospecting command:', message);
+    
+    // Send to the AI endpoint that can handle business prospecting
+    const result = await handleAIContactAction(message);
+    
+    console.log('🔍 Business prospecting response:', result);
+    
+    // Standardize response format
+    return {
+      success: true,
+      data: result,
+      message: result.message || 'Business prospecting completed successfully',
+      type: 'business_prospecting',
+      businessesFound: result.businessesFound || 0,
+      searchLocation: result.data?.searchLocation,
+      searchTerms: result.data?.searchTerms,
+      businesses: result.data?.businesses || []
+    };
+  } catch (error) {
+    console.error('❌ Business prospecting error:', error);
+    return {
+      success: false,
+      error: error.message,
+      type: 'business_prospecting_error'
+    };
+  }
+} 

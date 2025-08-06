@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { ENDPOINTS } from '../config.js';
-import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation, isCombinedListCreationAndAttachmentCommand, processCombinedListCreationAndAttachment, isCombinedActivityCreationAndListingAttachmentCommand, processCombinedActivityCreationAndListingAttachment } from '../services/aiContactActions';
+import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation, isCombinedListCreationAndAttachmentCommand, processCombinedListCreationAndAttachment, isCombinedActivityCreationAndListingAttachmentCommand, processCombinedActivityCreationAndListingAttachment, isBusinessProspectingCommand, processBusinessProspecting } from '../services/aiContactActions';
 
 // Helper function to check if a query is CRM-related
 function isCRMQuery(message) {
@@ -97,6 +97,8 @@ const ChatBox = ({ onShowLists }) => {
   const [error, setError] = useState('');
   const [lastActionType, setLastActionType] = useState('');
   const [showAbout, setShowAbout] = useState(false);
+  const [showBusinessResults, setShowBusinessResults] = useState(false);
+  const [businessResults, setBusinessResults] = useState(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -106,6 +108,20 @@ const ChatBox = ({ onShowLists }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // Listen for business results events
+  useEffect(() => {
+    const handleBusinessResults = (event) => {
+      setBusinessResults(event.detail);
+      setShowBusinessResults(true);
+    };
+
+    window.addEventListener('showBusinessResults', handleBusinessResults);
+    
+    return () => {
+      window.removeEventListener('showBusinessResults', handleBusinessResults);
+    };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -151,12 +167,14 @@ const ChatBox = ({ onShowLists }) => {
       const isCombinedActivity = isCombinedActivityCreationAndListingAttachmentCommand(currentMessage);
       const isList = isListCreationCommand(currentMessage);
       const isContact = isContactActionCommand(currentMessage);
+      const isBusinessProspecting = isBusinessProspectingCommand(currentMessage);
       console.log('🔍 Command Analysis:', {
         message: currentMessage,
         isCombinedListCreationAndAttachment: isCombinedList,
         isCombinedActivityCreationAndListingAttachment: isCombinedActivity,
         isListCreation: isList,
-        isContactAction: isContact
+        isContactAction: isContact,
+        isBusinessProspecting: isBusinessProspecting
       });
       
       // Additional debugging for activity patterns
@@ -206,6 +224,31 @@ const ChatBox = ({ onShowLists }) => {
           }
           
           actionType = 'list_creation';
+        } else {
+          throw new Error(result.error);
+        }
+      }
+      // Check if this is a business prospecting command
+      else if (isBusinessProspecting) {
+        console.log('🏢 Routing to Business Prospecting endpoint');
+        const result = await processBusinessProspecting(currentMessage);
+        
+        if (result.success) {
+          responseText = result.message;
+          actionType = 'business_prospecting';
+          
+          // Store business data for modal display
+          if (result.businesses && result.businesses.length > 0) {
+            // Trigger business results modal
+            window.dispatchEvent(new CustomEvent('showBusinessResults', {
+              detail: {
+                businesses: result.businesses,
+                searchLocation: result.searchLocation,
+                searchTerms: result.searchTerms,
+                businessesFound: result.businessesFound
+              }
+            }));
+          }
         } else {
           throw new Error(result.error);
         }
@@ -367,6 +410,7 @@ const ChatBox = ({ onShowLists }) => {
                   <span style={styles.actionBadge}>
                     {msg.actionType === 'contact_action' ? 'AI Contact Management' : 
                      msg.actionType === 'list_creation' ? 'AI List Creation' : 
+                     msg.actionType === 'business_prospecting' ? 'Business Prospecting' :
                      msg.actionType === 'show_lists' ? 'Contact Lists' : 'AI Action'}
                   </span>
                 )}
@@ -482,10 +526,62 @@ const ChatBox = ({ onShowLists }) => {
                 <li><strong>List Lists:</strong> "list my lists"</li>
               </ul>
               
+              <h3 style={styles.sectionTitle}>🏢 Business Prospecting</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Find Businesses:</strong> "find financial services businesses in Mt. Lebanon"</li>
+                <li><strong>Search Companies:</strong> "search for restaurants in Pittsburgh"</li>
+                <li><strong>Prospect Companies:</strong> "prospect tech companies in Bethel Park"</li>
+                <li><strong>Locate Businesses:</strong> "locate healthcare providers in Bridgeville"</li>
+              </ul>
+              
               <h3 style={styles.sectionTitle}>📝 Available Fields</h3>
               <p style={styles.fieldsText}>
                 <strong>Contact fields:</strong> firstName, lastName, email, phone, company, address, businessSector, linkedin, notes
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Business Results Modal */}
+      {showBusinessResults && businessResults && (
+        <div style={styles.modalOverlay} onClick={() => setShowBusinessResults(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>🏢 Business Prospecting Results</h2>
+              <button 
+                onClick={() => setShowBusinessResults(false)}
+                style={styles.closeButton}
+                className="close-button"
+              >
+                ×
+              </button>
+            </div>
+            <div style={styles.modalBody}>
+              <div style={styles.businessResultsHeader}>
+                <p><strong>Location:</strong> {businessResults.searchLocation}</p>
+                <p><strong>Businesses Found:</strong> {businessResults.businessesFound}</p>
+                <p><strong>Search Terms:</strong> {businessResults.searchTerms?.join(', ')}</p>
+              </div>
+              
+              <div style={styles.businessesContainer}>
+                {businessResults.businesses.map((business, index) => (
+                  <div key={business.place_id} style={styles.businessCard}>
+                    <h4 style={styles.businessName}>{business.name}</h4>
+                    <p style={styles.businessAddress}>{business.address}</p>
+                    {business.phone && <p style={styles.businessPhone}>📞 {business.phone}</p>}
+                    {business.website && (
+                      <p style={styles.businessWebsite}>
+                        🌐 <a href={business.website} target="_blank" rel="noopener noreferrer" style={styles.websiteLink}>
+                          Visit Website
+                        </a>
+                      </p>
+                    )}
+                    {business.rating && <p style={styles.businessRating}>⭐ {business.rating}/5</p>}
+                    <p style={styles.businessSearchTerm}>Found via: {business.search_term}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -774,6 +870,60 @@ const styles = {
     backgroundColor: 'rgba(0, 0, 0, 0.05)',
     padding: '12px',
     borderRadius: '8px',
+  },
+  businessResultsHeader: {
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    padding: '15px',
+    borderRadius: '8px',
+    marginBottom: '20px',
+  },
+  businessesContainer: {
+    maxHeight: '400px',
+    overflowY: 'auto',
+    display: 'grid',
+    gap: '15px',
+  },
+  businessCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    border: '1px solid rgba(0, 0, 0, 0.1)',
+    borderRadius: '8px',
+    padding: '15px',
+    boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+  },
+  businessName: {
+    margin: '0 0 8px 0',
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#2c2c2c',
+  },
+  businessAddress: {
+    margin: '5px 0',
+    fontSize: '14px',
+    color: '#666',
+  },
+  businessPhone: {
+    margin: '5px 0',
+    fontSize: '14px',
+    color: '#2c2c2c',
+  },
+  businessWebsite: {
+    margin: '5px 0',
+    fontSize: '14px',
+  },
+  websiteLink: {
+    color: '#0066cc',
+    textDecoration: 'none',
+  },
+  businessRating: {
+    margin: '5px 0',
+    fontSize: '14px',
+    color: '#2c2c2c',
+  },
+  businessSearchTerm: {
+    margin: '5px 0 0 0',
+    fontSize: '12px',
+    color: '#999',
+    fontStyle: 'italic',
   },
 };
 

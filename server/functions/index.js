@@ -12,13 +12,22 @@ import * as logger from "firebase-functions/logger";
 import { initializeApp, applicationDefault } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import OpenAI from "openai";
+import { defineSecret } from "firebase-functions/params";
+
 
 // Initialize Firebase Admin SDK
 initializeApp({ credential: applicationDefault() });
 const db = getFirestore();
 
+// Define secrets
+const openaiApiSecret = defineSecret("OPENAI_API_KEY");
+const googleApiSecret = defineSecret("GOOGLE_API_KEY");
+
+
+
 // Chat Cloud Function
 export const chat = onRequest(
+  { secrets: [openaiApiSecret] },
   async (req, res) => {
     // Enable CORS
     res.set('Access-Control-Allow-Origin', '*');
@@ -48,7 +57,7 @@ export const chat = onRequest(
       }
 
       // Get the secret value
-      const apiKey = process.env.OPENAI_API_KEY;
+      const apiKey = openaiApiSecret.value();
       if (!apiKey) {
         return res.status(500).json({ 
           error: 'OpenAI API key not configured. Please set OPENAI_API_KEY secret.' 
@@ -117,6 +126,7 @@ export const chat = onRequest(
 
 // AI Contact Action function
 export const aiContactAction = onRequest(
+  { secrets: [openaiApiSecret] },
   async (req, res) => {
     // Enable CORS
     res.set('Access-Control-Allow-Origin', '*');
@@ -149,7 +159,7 @@ export const aiContactAction = onRequest(
       }
 
       // Get the secret value
-      const apiKey = process.env.OPENAI_API_KEY;
+      const apiKey = openaiApiSecret.value();
       if (!apiKey) {
         return res.status(500).json({ 
           error: 'OpenAI API key not configured. Please set OPENAI_API_KEY secret.' 
@@ -177,6 +187,7 @@ Available actions:
 - ATTACH_LIST_TO_LISTING: User wants to attach an existing contact list to a listing
 - COMBINED_LIST_CREATION_AND_ATTACHMENT: User wants to create a contact list with criteria and then attach it to a listing in one command
 - COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT: User wants to create an activity for a contact AND attach it to a listing in one command
+- PROSPECT_BUSINESSES: User wants to find businesses in a specific location and category (find businesses, prospect, search for companies, locate businesses)
 - GENERAL_QUERY: User is asking a general question about the CRM system
 
 **CRITICAL: Use COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT when a listing is mentioned in the activity. Use CREATE_ACTIVITY only when NO listing is mentioned.**
@@ -224,6 +235,16 @@ IMPORTANT: For CREATE_ACTIVITY and COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACH
 - "Met with [contact]. [description]"
 - "Texted [contact]. [description]"
 
+IMPORTANT: For PROSPECT_BUSINESSES, look for these patterns:
+- "Find [businessCategory] businesses in [location]"
+- "Search for [businessCategory] in [location]"
+- "Prospect [businessCategory] companies in [location]"
+- "Locate [businessCategory] in [location]"
+- "Find businesses in [location] for [businessCategory]"
+- "Search [location] for [businessCategory]"
+- "Get [businessCategory] prospects in [location]"
+- "Find companies in [location] that do [businessCategory]"
+
 Activity type detection from context:
 - "emailed", "email", "sent email" → email
 - "called", "phone call", "phoned" → call
@@ -241,7 +262,7 @@ Contact identification can be by:
 
 Analyze the following user request and respond with ONLY a JSON object in this exact format:
 {
-        "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|ATTACH_LIST_TO_LISTING|COMBINED_LIST_CREATION_AND_ATTACHMENT|COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT|GENERAL_QUERY",
+        "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|ATTACH_LIST_TO_LISTING|COMBINED_LIST_CREATION_AND_ATTACHMENT|COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT|PROSPECT_BUSINESSES|GENERAL_QUERY",
   "confidence": 0.0-1.0,
   "extractedData": {
     "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
@@ -266,8 +287,8 @@ Analyze the following user request and respond with ONLY a JSON object in this e
     "listCriteria": "description of what contacts to include in the list",
     "listIdentifier": "name of the list to attach (if attaching list to listing)",
     "listingIdentifier": "name or address of the listing to attach to (if attaching list to listing)",
-    "listName": "suggested list name (if creating list)",
-    "listCriteria": "description of what contacts to include in the list"
+    "businessCategory": "type of business to search for (if prospecting businesses)",
+    "location": "location to search in (if prospecting businesses)"
   },
   "userMessage": "A friendly response explaining what you understood they want to do"
 }
@@ -400,6 +421,11 @@ Respond with ONLY the JSON object, no other text.`;
         case 'COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT':
           logger.info('🔧 Handling COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT...');
           result = await handleCombinedActivityCreationAndListingAttachment(intentAnalysis.extractedData, command);
+          break;
+          
+        case 'PROSPECT_BUSINESSES':
+          logger.info('🔧 Handling PROSPECT_BUSINESSES...');
+          result = await handleBusinessProspecting(intentAnalysis.extractedData, command);
           break;
           
         case 'GENERAL_QUERY':
@@ -563,7 +589,7 @@ export const addContactListToListing = onRequest(async (req, res) => {
       contactListId: contactListId,
       contactListName: contactListDoc.data().name,
       listingName: listingData.name || listingData.address || 'Unknown Listing',
-      timestamp: new Date(),
+      timestamp: FieldValue.serverTimestamp(),
       success: true
     });
 
@@ -1598,11 +1624,68 @@ async function handleAttachListToListing(extractedData, originalCommand) {
   }
 }
 
+// Helper function to handle business prospecting
+async function handleBusinessProspecting(extractedData, originalCommand) {
+  try {
+    const { businessCategory, location } = extractedData;
+    
+    logger.info('🔍 Business Prospecting Request:', { businessCategory, location, originalCommand });
+
+    // Validate required fields
+    if (!businessCategory || !location) {
+      return {
+        success: false,
+        error: 'Missing required information. Please specify both business category and location.',
+        details: 'businessCategory and location are required for business prospecting',
+        suggestion: 'Try: "Find financial services businesses in Mt. Lebanon"'
+      };
+    }
+
+    // Call the prospectBusinesses function
+    const response = await fetch('https://prospectbusinesses-obagwr34kq-uc.a.run.app', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        businessCategory: businessCategory,
+        location: location
+      })
+    });
+
+    const result = await response.json();
+    
+    if (result.success) {
+      return {
+        success: true,
+        message: result.message,
+        action: 'prospect_businesses',
+        data: result.data,
+        businessesFound: result.data.businesses.length
+      };
+    } else {
+      return {
+        success: false,
+        error: result.error || 'Failed to find businesses',
+        details: result.details || 'Business prospecting failed'
+      };
+    }
+
+  } catch (error) {
+    logger.error('❌ Error in business prospecting:', error);
+    return {
+      success: false,
+      error: 'Failed to process business prospecting request',
+      details: 'Business prospecting processing failed'
+    };
+  }
+}
+
 // Helper function to handle general queries
 async function handleGeneralQuery(originalCommand) {
   // Use the regular chat endpoint for general queries
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = openaiApiSecret.value();
     const openai = new OpenAI({
       apiKey: apiKey,
     });
@@ -2028,3 +2111,230 @@ export const helloWorld = onRequest(
     res.send("Hello from Firebase!");
   }
 );
+
+// Prospect Businesses Function
+export const prospectBusinesses = onRequest(
+  { secrets: [openaiApiSecret, googleApiSecret] },
+  async (req, res) => {
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  // Only allow POST requests
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    return;
+  }
+
+  try {
+    const { businessCategory, location } = req.body;
+
+    // Validate input
+    if (!businessCategory || !location) {
+      return res.status(400).json({
+        error: 'Both businessCategory and location are required'
+      });
+    }
+
+    logger.info('🔍 Prospect Businesses Request:', { businessCategory, location });
+
+    // Get API keys
+    const openaiApiKey = openaiApiSecret.value();
+    const googleApiKey = googleApiSecret.value();
+
+    if (!openaiApiKey) {
+      logger.error('❌ OpenAI API key not configured');
+      return res.status(500).json({
+        error: 'OpenAI API key not configured. Please set OPENAI_API_KEY.'
+      });
+    }
+
+    if (!googleApiKey) {
+      logger.error('❌ Google API key not configured. Please set google.key in Firebase Functions Config');
+      return res.status(500).json({
+        error: 'Google API key not configured. Please set google.key in Firebase Functions Config.'
+      });
+    }
+
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: openaiApiKey,
+    });
+
+    // Step 1: Expand business category using OpenAI
+    logger.info('🧠 Step 1: Expanding business category with OpenAI');
+    const expansionPrompt = `
+Given the business category "${businessCategory}", generate 6-10 related search terms that would help find similar businesses.
+Focus on variations, synonyms, and related business types that would appear in Google Places.
+
+For example, if the category is "dentist", include terms like:
+- dentist
+- dental office
+- dental clinic
+- orthodontist
+- dental practice
+- oral surgeon
+- endodontist
+- periodontist
+- family dentist
+- cosmetic dentist
+
+Return ONLY a JSON array of strings, no other text:
+["term1", "term2", "term3", ...]
+`;
+
+    const expansionCompletion = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [{ role: "user", content: expansionPrompt }],
+      max_tokens: 200,
+      temperature: 0.3,
+    });
+
+    const expansionResponse = expansionCompletion.choices[0]?.message?.content || '';
+    let searchTerms;
+    
+    try {
+      searchTerms = JSON.parse(expansionResponse);
+      logger.info('✅ Expanded search terms:', searchTerms);
+    } catch (parseError) {
+      logger.error('❌ Failed to parse OpenAI response:', expansionResponse);
+      return res.status(500).json({
+        error: 'Failed to expand business category',
+        details: 'OpenAI response parsing failed'
+      });
+    }
+
+    // Step 2: Geocode the location
+    logger.info('🗺️ Step 2: Geocoding location');
+    const geocodeLocation = location.includes(', PA') ? location : `${location}, PA`;
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(geocodeLocation)}&key=${googleApiKey}`;
+    
+    const geocodeResponse = await fetch(geocodeUrl);
+    const geocodeData = await geocodeResponse.json();
+
+    logger.info('🔍 Geocoding response:', geocodeData);
+
+    if (geocodeData.status !== 'OK' || !geocodeData.results[0]) {
+      logger.error('❌ Geocoding failed:', geocodeData.status, geocodeData.error_message);
+      return res.status(400).json({
+        error: 'Location not found',
+        details: `Could not find coordinates for: ${location}`,
+        googleStatus: geocodeData.status,
+        googleError: geocodeData.error_message
+      });
+    }
+
+    const { lat, lng } = geocodeData.results[0].geometry.location;
+    logger.info('✅ Geocoded location:', { lat, lng, address: geocodeData.results[0].formatted_address });
+
+    // Step 3: Search for businesses using each term
+    logger.info('🏢 Step 3: Searching for businesses');
+    const allBusinesses = new Map(); // Use Map to deduplicate by place_id
+
+    for (const searchTerm of searchTerms) {
+      try {
+        logger.info(`🔍 Searching for: ${searchTerm}`);
+        
+        // Google Places Nearby Search
+                  const nearbyUrl = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=3219&keyword=${encodeURIComponent(searchTerm)}&key=${googleApiKey}`;
+        
+        const nearbyResponse = await fetch(nearbyUrl);
+        const nearbyData = await nearbyResponse.json();
+
+        logger.info(`🔍 Nearby search response for ${searchTerm}:`, nearbyData);
+
+        if (nearbyData.status === 'OK' && nearbyData.results) {
+          logger.info(`✅ Found ${nearbyData.results.length} results for ${searchTerm}`);
+          
+          // Get detailed information for each place
+          for (const place of nearbyData.results) {
+            if (!allBusinesses.has(place.place_id)) {
+              try {
+                // Google Place Details API
+                const detailsUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${place.place_id}&fields=name,formatted_address,rating,formatted_phone_number,website,geometry&key=${googleApiKey}`;
+                
+                const detailsResponse = await fetch(detailsUrl);
+                const detailsData = await detailsResponse.json();
+
+                if (detailsData.status === 'OK' && detailsData.result) {
+                  const business = {
+                    place_id: place.place_id,
+                    name: detailsData.result.name || place.name,
+                    address: detailsData.result.formatted_address || place.vicinity,
+                    rating: detailsData.result.rating || place.rating || null,
+                    phone: detailsData.result.formatted_phone_number || null,
+                    website: detailsData.result.website || null,
+                    coordinates: detailsData.result.geometry?.location || place.geometry?.location,
+                    search_term: searchTerm
+                  };
+
+                  allBusinesses.set(place.place_id, business);
+                  logger.info(`✅ Added business: ${business.name}`);
+                }
+              } catch (detailsError) {
+                logger.error(`❌ Error getting details for ${place.place_id}:`, detailsError);
+              }
+            }
+          }
+        } else {
+          logger.warn(`⚠️ No results for search term: ${searchTerm}. Status: ${nearbyData.status}, Error: ${nearbyData.error_message}`);
+        }
+
+        // Add delay to respect API rate limits
+        await new Promise(resolve => setTimeout(resolve, 200));
+        
+      } catch (searchError) {
+        logger.error(`❌ Error searching for ${searchTerm}:`, searchError);
+      }
+    }
+
+    // Convert Map to array
+    const businesses = Array.from(allBusinesses.values());
+    
+    logger.info(`✅ Prospect search complete. Found ${businesses.length} unique businesses.`);
+
+    // Save search to Firestore for tracking
+    try {
+      const searchData = {
+        businessCategory,
+        location,
+        searchTerms,
+        coordinates: { lat, lng },
+        resultsCount: businesses.length,
+        timestamp: FieldValue.serverTimestamp(),
+        searchTermsUsed: searchTerms
+      };
+
+      await db.collection('prospectSearches').add(searchData);
+      logger.info('✅ Prospect search saved to Firestore');
+    } catch (firestoreError) {
+      logger.error('❌ Error saving to Firestore:', firestoreError);
+      // Don't fail the request if Firestore save fails
+    }
+
+    res.json({
+      success: true,
+      message: `Found ${businesses.length} businesses for ${businessCategory} in ${location}`,
+      data: {
+        searchLocation: geocodeData.results[0].formatted_address,
+        coordinates: { lat, lng },
+        searchTerms,
+        businesses
+      }
+    });
+
+  } catch (error) {
+    logger.error('❌ Error in prospectBusinesses function:', error);
+    res.status(500).json({
+      error: 'Failed to search for businesses',
+      details: error.message
+    });
+  }
+});
