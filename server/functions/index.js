@@ -8,6 +8,7 @@
  */
 
 import { onRequest } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as logger from "firebase-functions/logger";
 import { initializeApp, applicationDefault } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
@@ -2308,12 +2309,14 @@ Return ONLY a JSON array of strings, no other text:
         searchTerms,
         coordinates: { lat, lng },
         resultsCount: businesses.length,
+        businessesFound: businesses.length,
+        businesses: businesses, // Store the actual business results
         timestamp: FieldValue.serverTimestamp(),
         searchTermsUsed: searchTerms
       };
 
       await db.collection('prospectSearches').add(searchData);
-      logger.info('✅ Prospect search saved to Firestore');
+      logger.info('✅ Prospect search saved to Firestore with business results');
     } catch (firestoreError) {
       logger.error('❌ Error saving to Firestore:', firestoreError);
       // Don't fail the request if Firestore save fails
@@ -2336,5 +2339,44 @@ Return ONLY a JSON array of strings, no other text:
       error: 'Failed to search for businesses',
       details: error.message
     });
+  }
+});
+
+// Scheduled function to delete old prospect searches (30+ days old)
+export const cleanupOldProspects = onSchedule({
+  schedule: "0 2 * * *", // Run daily at 2 AM
+  timeZone: "America/New_York"
+}, async (event) => {
+  try {
+    logger.info('🧹 Starting cleanup of old prospect searches...');
+    
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    // Query for documents older than 30 days
+    const snapshot = await db.collection('prospectSearches')
+      .where('timestamp', '<', thirtyDaysAgo)
+      .get();
+    
+    if (snapshot.empty) {
+      logger.info('✅ No old prospect searches to delete');
+      return;
+    }
+    
+    logger.info(`📊 Found ${snapshot.size} old prospect searches to delete`);
+    
+    // Delete old documents
+    const batch = db.batch();
+    snapshot.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+      logger.info(`🗑️ Marking for deletion: ${doc.id} (${doc.data().businessCategory} in ${doc.data().location})`);
+    });
+    
+    await batch.commit();
+    
+    logger.info(`✅ Successfully deleted ${snapshot.size} old prospect searches`);
+    
+  } catch (error) {
+    logger.error('❌ Error in cleanupOldProspects:', error);
   }
 });

@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react
 import ChatBox from './components/ChatBox';
 import Contacts from './pages/Contacts';
 import Listings from './pages/Listings';
+import Prospects from './pages/Prospects';
 import ShowListsModal from './components/ShowListsModal';
 import ContactModal from './components/ContactModal';
 
@@ -64,6 +65,23 @@ const HomePage = () => {
           >
             Listings
           </button>
+          <button
+            style={{
+              background: '#111',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '16px 32px',
+              fontSize: 20,
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+              transition: 'background 0.2s',
+            }}
+            onClick={() => navigate('/prospects')}
+          >
+            Prospects
+          </button>
         </div>
       </div>
       
@@ -98,6 +116,7 @@ const App = () => {
         <Route path="/" element={<HomePage />} />
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/listings" element={<Listings />} />
+        <Route path="/prospects" element={<Prospects />} />
       </Routes>
     </Router>
   );
