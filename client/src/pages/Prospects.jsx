@@ -13,6 +13,8 @@ const Prospects = () => {
   const [websiteFilter, setWebsiteFilter] = useState('all'); // 'all', 'yes', 'no'
   const [showCreateContactModal, setShowCreateContactModal] = useState(false);
   const [selectedBusiness, setSelectedBusiness] = useState(null);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+  const [selectedBusinessForTask, setSelectedBusinessForTask] = useState(null);
 
   useEffect(() => {
     fetchProspects();
@@ -77,6 +79,11 @@ const Prospects = () => {
   const handleSaveAsContact = (business) => {
     setSelectedBusiness(business);
     setShowCreateContactModal(true);
+  };
+
+  const handleAddTask = (business) => {
+    setSelectedBusinessForTask(business);
+    setShowAddTaskModal(true);
   };
 
   const handleCreateContact = async (contactData) => {
@@ -333,6 +340,12 @@ const Prospects = () => {
                     >
                       💼 Save as Contact
                     </button>
+                    <button 
+                      onClick={() => handleAddTask(business)}
+                      style={styles.addTaskButton}
+                    >
+                      📋 Add Task
+                    </button>
                   </div>
                 </div>
               ))}
@@ -367,6 +380,17 @@ const Prospects = () => {
             setSelectedBusiness(null);
           }}
           onSave={handleCreateContact}
+        />
+      )}
+
+      {/* Add Task Modal */}
+      {showAddTaskModal && selectedBusinessForTask && (
+        <AddTaskModal
+          business={selectedBusinessForTask}
+          onClose={() => {
+            setShowAddTaskModal(false);
+            setSelectedBusinessForTask(null);
+          }}
         />
       )}
 
@@ -758,6 +782,20 @@ const styles = {
     transition: 'all 0.3s ease',
     fontFamily: 'Georgia, serif',
     width: '100%',
+    marginBottom: '8px',
+  },
+  addTaskButton: {
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    color: '#ffffff',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    padding: '10px 20px',
+    fontSize: '14px',
+    fontWeight: '400',
+    cursor: 'pointer',
+    borderRadius: '8px',
+    transition: 'all 0.3s ease',
+    fontFamily: 'Georgia, serif',
+    width: '100%',
   },
 };
 
@@ -1067,5 +1105,105 @@ styleSheet.textContent = `
   }
 `;
 document.head.appendChild(styleSheet);
+
+const AddTaskModal = ({ business, onClose }) => {
+  const [taskData, setTaskData] = useState({
+    title: `Prospect ${business.name}`,
+    description: `Website: ${business.website || 'N/A'}\nPhone: ${business.phone || 'N/A'}`,
+    dueDate: new Date().toISOString().split('T')[0],
+    priority: 'medium'
+  });
+
+  const handleSubmit = async () => {
+    try {
+      const taskDataToSave = {
+        ...taskData,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      
+      await addDoc(collection(db, 'tasks'), taskDataToSave);
+      alert('Task created successfully!');
+      onClose();
+    } catch (error) {
+      console.error('Error creating task:', error);
+      alert('Failed to create task: ' + error.message);
+    }
+  };
+
+  const handleChange = (field, value) => {
+    setTaskData(prev => ({ ...prev, [field]: value }));
+  };
+
+  return (
+    <div style={modalStyles.overlay}>
+      <div style={modalStyles.modal}>
+        <button style={modalStyles.closeButton} onClick={onClose}>&times;</button>
+        <h2 style={modalStyles.title}>Add Task for {business.name}</h2>
+        
+        <div style={modalStyles.content}>
+          <div style={modalStyles.fieldRow}>
+            <label style={modalStyles.label}>Task Title</label>
+            <input
+              type="text"
+              value={taskData.title}
+              onChange={(e) => handleChange('title', e.target.value)}
+              style={modalStyles.input}
+            />
+          </div>
+
+          <div style={modalStyles.fieldRow}>
+            <label style={modalStyles.label}>Description</label>
+            <textarea
+              value={taskData.description}
+              onChange={(e) => handleChange('description', e.target.value)}
+              style={modalStyles.textarea}
+              rows={4}
+            />
+          </div>
+
+          <div style={modalStyles.fieldRow}>
+            <label style={modalStyles.label}>Due Date</label>
+            <input
+              type="date"
+              value={taskData.dueDate}
+              onChange={(e) => handleChange('dueDate', e.target.value)}
+              style={modalStyles.input}
+            />
+          </div>
+
+          <div style={modalStyles.fieldRow}>
+            <label style={modalStyles.label}>Priority</label>
+            <select
+              value={taskData.priority}
+              onChange={(e) => handleChange('priority', e.target.value)}
+              style={modalStyles.input}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={modalStyles.actions}>
+          <button
+            onClick={onClose}
+            style={modalStyles.cancelButton}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            style={modalStyles.saveButton}
+          >
+            Create Task
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default Prospects; 

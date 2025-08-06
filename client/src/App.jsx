@@ -4,6 +4,7 @@ import ChatBox from './components/ChatBox';
 import Contacts from './pages/Contacts';
 import Listings from './pages/Listings';
 import Prospects from './pages/Prospects';
+import Tasks from './pages/Tasks';
 import ShowListsModal from './components/ShowListsModal';
 import ContactModal from './components/ContactModal';
 
@@ -82,6 +83,23 @@ const HomePage = () => {
           >
             Prospects
           </button>
+          <button
+            style={{
+              background: '#111',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '16px 32px',
+              fontSize: 20,
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+              transition: 'background 0.2s',
+            }}
+            onClick={() => navigate('/tasks')}
+          >
+            Tasks
+          </button>
         </div>
       </div>
       
@@ -117,6 +135,7 @@ const App = () => {
         <Route path="/contacts" element={<Contacts />} />
         <Route path="/listings" element={<Listings />} />
         <Route path="/prospects" element={<Prospects />} />
+        <Route path="/tasks" element={<Tasks />} />
       </Routes>
     </Router>
   );
