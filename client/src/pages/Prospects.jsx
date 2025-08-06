@@ -190,7 +190,7 @@ const Prospects = () => {
                 >
                   <div style={styles.searchHeader}>
                     <h3 style={styles.searchTitle}>
-                      {search.businessCategory || 'Business Search'}
+                      {search.businessCategory || 'Business Search'} around {search.location}
                     </h3>
                     <span style={styles.searchDate}>
                       {formatDate(search.timestamp)}
