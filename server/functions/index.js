@@ -466,6 +466,224 @@ Respond with ONLY the JSON object, no other text.`;
   }
 );
 
+// AI Task Creation Cloud Function
+export const aiCreateTask = onRequest(
+  { secrets: [openaiApiSecret] },
+  async (req, res) => {
+    // Enable CORS
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed. Use POST.' });
+      return;
+    }
+
+    try {
+      const { command } = req.body;
+      
+      logger.info('🤖 AI Task Creation Request:', { command });
+
+      // Validate input
+      if (!command || typeof command !== 'string') {
+        logger.info('❌ Invalid input received:', { command });
+        return res.status(400).json({ 
+          error: 'Invalid input. Please provide a "command" field with a string value.' 
+        });
+      }
+
+      // Get the secret value
+      const apiKey = openaiApiSecret.value();
+      if (!apiKey) {
+        logger.info('❌ OpenAI API key not configured');
+        return res.status(500).json({ 
+          error: 'OpenAI API key not configured. Please set OPENAI_API_KEY secret.' 
+        });
+      }
+
+      // Initialize OpenAI client inside the function
+      const openai = new OpenAI({
+        apiKey: apiKey,
+      });
+
+      // Get current date for GPT context
+      const currentDate = new Date();
+      const currentDateString = currentDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+      const currentDayName = currentDate.toLocaleDateString('en-US', { weekday: 'long' });
+      const currentMonthName = currentDate.toLocaleDateString('en-US', { month: 'long' });
+      const currentDay = currentDate.getDate();
+      const currentYear = currentDate.getFullYear();
+      
+      // Step 1: Analyze user intent with GPT for task creation
+      const taskIntentPrompt = `
+You are a CRM assistant that analyzes user requests to create tasks for contacts.
+
+CURRENT DATE CONTEXT:
+- Today is ${currentDayName}, ${currentMonthName} ${currentDay}, ${currentYear}
+- Current date in YYYY-MM-DD format: ${currentDateString}
+- Use this as the reference point for all date calculations
+
+Available actions:
+- CREATE_TASK: User wants to create a task for a specific contact
+
+Task creation patterns to look for:
+- "create a task for [contact] [date] regarding [description]"
+- "create task for [contact] [date] about [description]"
+- "add task for [contact] [date] [description]"
+- "create a task for [contact] [date] to [description]"
+- "task for [contact] [date] [description]"
+- "create task [contact] [date] [description]"
+
+Date parsing examples (based on current date ${currentDateString}):
+- "today" → ${currentDateString}
+- "tomorrow" → ${new Date(currentDate.getTime() + 24*60*60*1000).toISOString().split('T')[0]}
+- "next Tuesday" → calculate next Tuesday from ${currentDateString}
+- "next Monday" → calculate next Monday from ${currentDateString}
+- "next Wednesday" → calculate next Wednesday from ${currentDateString}
+- "next Thursday" → calculate next Thursday from ${currentDateString}
+- "next Friday" → calculate next Friday from ${currentDateString}
+- "next Saturday" → calculate next Saturday from ${currentDateString}
+- "next Sunday" → calculate next Sunday from ${currentDateString}
+- "August 22nd" → 2025-08-22 (specific date)
+- "August 22" → 2025-08-22 (specific date)
+- "Aug 22" → 2025-08-22 (specific date)
+- "8/22" → 2025-08-22 (specific date)
+- "in 3 days" → ${new Date(currentDate.getTime() + 3*24*60*60*1000).toISOString().split('T')[0]}
+- "in 1 week" → ${new Date(currentDate.getTime() + 7*24*60*60*1000).toISOString().split('T')[0]}
+- "in 2 weeks" → ${new Date(currentDate.getTime() + 14*24*60*60*1000).toISOString().split('T')[0]}
+- "next week" → ${new Date(currentDate.getTime() + 7*24*60*60*1000).toISOString().split('T')[0]}
+
+CRITICAL: Use the current date ${currentDateString} as your reference point. Do NOT use any dates from 2022 or other years.
+
+Contact identification can be by:
+- Full name (firstName + lastName)
+- Email address (contains @)
+- Company name
+
+Analyze the following user request and respond with ONLY a JSON object in this exact format:
+{
+  "intent": "CREATE_TASK",
+  "confidence": 0.0-1.0,
+  "extractedData": {
+    "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
+    "taskTitle": "suggested task title based on description",
+    "taskDescription": "full description of the task",
+    "dueDate": "parsed date in YYYY-MM-DD format",
+    "priority": "high|medium|low (default to medium)",
+    "status": "pending (default)"
+  },
+  "userMessage": "A friendly response explaining what task you understood they want to create"
+}
+
+If the request is unclear or doesn't match task creation patterns, set intent to GENERAL_QUERY and confidence to 0.0.
+
+Examples of CREATE_TASK commands:
+- "create a task for Elodie Wren today regarding emailing Martin"
+- "create task for john@example.com tomorrow about follow up call"
+- "add task for John Smith next Tuesday to review proposal"
+- "task for Acme Corp August 22nd regarding contract discussion"
+- "create a task for Jane Doe in 3 days about property showing"
+- "create task for elodie@example.com next week regarding client meeting"
+
+User request: "${command}"
+
+Respond with ONLY the JSON object, no other text.`;
+
+      // Call OpenAI API to analyze intent
+      logger.info('🔍 Sending task intent analysis request to OpenAI...');
+      const taskIntentCompletion = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "user",
+            content: taskIntentPrompt
+          }
+        ],
+        max_tokens: 300,
+        temperature: 0.1,
+      });
+
+      const taskIntentResponse = taskIntentCompletion.choices[0]?.message?.content || '';
+      logger.info('🔍 Raw OpenAI Task Intent Response:', taskIntentResponse);
+      
+      // Parse the intent analysis
+      let taskIntentAnalysis;
+      try {
+        taskIntentAnalysis = JSON.parse(taskIntentResponse);
+        logger.info('🔍 Parsed Task Intent Analysis:', JSON.stringify(taskIntentAnalysis, null, 2));
+      } catch (parseError) {
+        logger.error('❌ Failed to parse task intent analysis:', taskIntentResponse);
+        logger.error('❌ Parse error:', parseError.message);
+        return res.status(500).json({ 
+          error: 'Failed to understand your task request. Please try rephrasing.',
+          details: 'Task intent analysis parsing failed'
+        });
+      }
+
+      // Check confidence level
+      const minConfidence = 0.3;
+      logger.info(`🔍 Task confidence check: ${taskIntentAnalysis.confidence} >= ${minConfidence} (${taskIntentAnalysis.confidence >= minConfidence ? 'PASS' : 'FAIL'})`);
+      
+      if (taskIntentAnalysis.confidence < minConfidence) {
+        logger.info('❌ Low confidence in task intent analysis');
+        return res.status(400).json({ 
+          error: 'I\'m not sure what task you want to create. Please be more specific.',
+          details: 'Low confidence in task intent analysis',
+          suggestion: taskIntentAnalysis.userMessage,
+          debug: taskIntentAnalysis
+        });
+      }
+
+      // Step 2: Execute task creation
+      logger.info(`🔍 Executing task creation: ${taskIntentAnalysis.intent}`);
+      let result;
+      
+      if (taskIntentAnalysis.intent === 'CREATE_TASK') {
+        logger.info('🔧 Handling CREATE_TASK...');
+        result = await handleTaskCreation(taskIntentAnalysis.extractedData, command);
+      } else {
+        logger.info(`❌ Unknown task intent type: ${taskIntentAnalysis.intent}`);
+        return res.status(400).json({ 
+          error: 'I don\'t understand what task you want to create. Please try rephrasing your request.',
+          details: 'Invalid task intent type'
+        });
+      }
+
+      logger.info('✅ Final task creation result:', JSON.stringify(result, null, 2));
+      res.json(result);
+
+    } catch (error) {
+      logger.error('❌ Error in /ai-create-task endpoint:', error);
+      logger.error('❌ Error stack:', error.stack);
+      
+      // Handle specific OpenAI errors
+      if (error.status === 401) {
+        logger.info('❌ OpenAI API key error');
+        return res.status(401).json({ error: 'Invalid OpenAI API key' });
+      } else if (error.status === 429) {
+        logger.info('❌ OpenAI rate limit error');
+        return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+      } else if (error.status === 400) {
+        logger.info('❌ OpenAI invalid request error');
+        return res.status(400).json({ error: 'Invalid request to OpenAI API' });
+      }
+      
+      res.status(500).json({ 
+        error: 'Failed to create task. Please try again.',
+        details: error.message
+      });
+    }
+  }
+);
+
 // Get all listings endpoint (for dropdown selection)
 export const getListings = onRequest(async (req, res) => {
   // Enable CORS
@@ -1679,6 +1897,128 @@ async function handleBusinessProspecting(extractedData, originalCommand) {
       error: 'Failed to process business prospecting request',
       details: 'Business prospecting processing failed'
     };
+  }
+}
+
+// Handle task creation
+async function handleTaskCreation(extractedData, originalCommand) {
+  try {
+    logger.info('🔧 Starting task creation with data:', extractedData);
+    
+    const { contactIdentifier, taskTitle, taskDescription, dueDate, priority = 'medium', status = 'pending' } = extractedData;
+    
+    // Validate required fields
+    if (!contactIdentifier) {
+      return {
+        success: false,
+        error: 'Contact identifier is required',
+        details: 'No contact specified in the task creation request'
+      };
+    }
+    
+    if (!taskDescription) {
+      return {
+        success: false,
+        error: 'Task description is required',
+        details: 'No task description provided'
+      };
+    }
+    
+    if (!dueDate) {
+      return {
+        success: false,
+        error: 'Due date is required',
+        details: 'No due date specified for the task'
+      };
+    }
+    
+    // Find the contact
+    logger.info('🔍 Looking for contact:', contactIdentifier);
+    const contactResult = await findContact(contactIdentifier);
+    
+    if (!contactResult) {
+      return {
+        success: false,
+        error: 'Contact not found',
+        details: `Could not find contact: ${contactIdentifier}`,
+        suggestion: 'Please check the contact name, email, or company and try again.'
+      };
+    }
+    
+    logger.info('✅ Found contact:', contactResult);
+    
+    // Extract contact data from the result
+    const contactData = contactResult.data;
+    const contactId = contactResult.id;
+    
+    // Create the task
+    const taskData = {
+      title: taskTitle || taskDescription,
+      description: taskDescription,
+      dueDate: dueDate,
+      priority: priority,
+      status: status,
+      contactId: contactId,
+      prospectId: null,
+      prospectBusinessId: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    logger.info('🔧 Creating task with data:', taskData);
+    
+    // Add task to Firestore
+    const taskRef = await db.collection('tasks').add(taskData);
+    
+    logger.info('✅ Task created successfully with ID:', taskRef.id);
+    
+    // Log the action
+    await logTaskAction(originalCommand, 'create_task', taskRef.id, taskData, contactData);
+    
+    return {
+      success: true,
+      message: `Task created successfully for ${contactData.firstName} ${contactData.lastName}`,
+      taskId: taskRef.id,
+      task: {
+        ...taskData,
+        id: taskRef.id
+      },
+      contact: {
+        id: contactId,
+        firstName: contactData.firstName,
+        lastName: contactData.lastName,
+        email: contactData.email,
+        company: contactData.company
+      }
+    };
+    
+  } catch (error) {
+    logger.error('❌ Error in handleTaskCreation:', error);
+    return {
+      success: false,
+      error: 'Failed to create task',
+      details: error.message
+    };
+  }
+}
+
+// Helper function to log task actions
+async function logTaskAction(command, action, taskId, taskData, contact) {
+  try {
+    await db.collection('ai_task_actions').add({
+      command: command,
+      action: action,
+      taskId: taskId,
+      taskTitle: taskData.title,
+      contactId: contact.id,
+      contactName: `${contact.firstName} ${contact.lastName}`,
+      dueDate: taskData.dueDate,
+      priority: taskData.priority,
+      timestamp: new Date(),
+      success: true
+    });
+  } catch (error) {
+    logger.error('Failed to log task action:', error);
   }
 }
 

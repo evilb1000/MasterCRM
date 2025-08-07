@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { ENDPOINTS } from '../config.js';
 import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation, isCombinedListCreationAndAttachmentCommand, processCombinedListCreationAndAttachment, isCombinedActivityCreationAndListingAttachmentCommand, processCombinedActivityCreationAndListingAttachment, isBusinessProspectingCommand, processBusinessProspecting } from '../services/aiContactActions';
+import { isTaskCreationCommand, processTaskCreation } from '../services/aiTaskActions';
 
 // Helper function to check if a query is CRM-related
 function isCRMQuery(message) {
@@ -168,13 +169,15 @@ const ChatBox = ({ onShowLists }) => {
       const isList = isListCreationCommand(currentMessage);
       const isContact = isContactActionCommand(currentMessage);
       const isBusinessProspecting = isBusinessProspectingCommand(currentMessage);
+      const isTaskCreation = isTaskCreationCommand(currentMessage);
       console.log('🔍 Command Analysis:', {
         message: currentMessage,
         isCombinedListCreationAndAttachment: isCombinedList,
         isCombinedActivityCreationAndListingAttachment: isCombinedActivity,
         isListCreation: isList,
         isContactAction: isContact,
-        isBusinessProspecting: isBusinessProspecting
+        isBusinessProspecting: isBusinessProspecting,
+        isTaskCreation: isTaskCreation
       });
       
       // Additional debugging for activity patterns
@@ -249,6 +252,29 @@ const ChatBox = ({ onShowLists }) => {
               }
             }));
           }
+        } else {
+          throw new Error(result.error);
+        }
+      }
+      // Check if this is a task creation command
+      else if (isTaskCreation) {
+        console.log('📋 Routing to Task Creation endpoint');
+        const result = await processTaskCreation(currentMessage);
+        
+        if (result.success) {
+          responseText = `${result.message}\n\nTask Details:\n- Title: ${result.task.title}\n- Description: ${result.task.description}\n- Due Date: ${result.task.dueDate}\n- Priority: ${result.task.priority}\n- Status: ${result.task.status}\n- Task ID: ${result.taskId}\n\nContact: ${result.contact.firstName} ${result.contact.lastName} (${result.contact.email})`;
+          actionType = 'task_creation';
+          
+          // Emit a custom event to refresh tasks
+          console.log('🎯 AI Task created, dispatching refresh event');
+          window.dispatchEvent(new CustomEvent('aiTaskCreated', {
+            detail: {
+              taskId: result.taskId,
+              contactId: result.contact.id,
+              taskTitle: result.task.title,
+              dueDate: result.task.dueDate
+            }
+          }));
         } else {
           throw new Error(result.error);
         }
