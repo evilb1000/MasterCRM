@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { firebase } from '../firebase';
 import { getContactActivities } from '../services/activitiesService';
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const SECTOR_OPTIONS = [
@@ -28,6 +28,8 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
   const [showTaskDetails, setShowTaskDetails] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
   const [editingTask, setEditingTask] = useState(null);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+  const [showAddActivityModal, setShowAddActivityModal] = useState(false);
 
   useEffect(() => {
     setEditContact(contact || {});
@@ -287,6 +289,22 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
       color: '#222',
       borderBottom: '1px solid #ddd',
       paddingBottom: 8,
+      display: 'flex', // Added for button alignment
+      alignItems: 'center', // Added for button alignment
+      gap: '12px', // Added for spacing
+    },
+    addActivityButton: { // New style for the "Add Activity" button
+      background: '#222',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '6px',
+      padding: '4px 12px',
+      fontSize: '0.8rem',
+      fontWeight: 500,
+      cursor: 'pointer',
+      fontFamily: 'Georgia, serif',
+      transition: 'background 0.2s',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     },
     activitiesLoading: {
       color: '#222',
@@ -355,6 +373,22 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
       color: '#222',
       borderBottom: '1px solid #ddd',
       paddingBottom: 8,
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+    },
+    addTaskButton: {
+      background: '#222',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '6px',
+      padding: '4px 12px',
+      fontSize: '0.8rem',
+      fontWeight: 500,
+      cursor: 'pointer',
+      fontFamily: 'Georgia, serif',
+      transition: 'background 0.2s',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     },
     tasksLoading: {
       color: '#222',
@@ -632,10 +666,11 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
 
   const styles = getStyles(mode);
 
+  if (!open) return null;
+  
   return (
-    open && (
-      <>
-        <div style={styles.overlay}>
+    <>
+      <div style={styles.overlay}>
         <div
           style={{
             ...styles.modal,
@@ -756,7 +791,15 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
             {/* Tasks - only show in view mode */}
             {mode === 'view' && (
               <div style={styles.tasksSection}>
-                <div style={styles.tasksTitle}>Tasks</div>
+                <div style={styles.tasksTitle}>
+                  Tasks
+                  <button
+                    style={styles.addTaskButton}
+                    onClick={() => setShowAddTaskModal(true)}
+                  >
+                    Add Task
+                  </button>
+                </div>
                 {contactTasksLoading ? (
                   <div style={styles.tasksLoading}>Loading tasks...</div>
                 ) : contactTasks.length === 0 ? (
@@ -803,7 +846,15 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
             {/* Activities - only show in view mode */}
             {mode === 'view' && (
               <div style={styles.activitiesSection}>
-                <div style={styles.activitiesTitle}>Activities</div>
+                <div style={styles.activitiesTitle}>
+                  Activities
+                  <button
+                    style={styles.addActivityButton}
+                    onClick={() => setShowAddActivityModal(true)}
+                  >
+                    Add Activity
+                  </button>
+                </div>
                 {contactActivitiesLoading ? (
                   <div style={styles.activitiesLoading}>Loading activities...</div>
                 ) : contactActivities.length === 0 ? (
@@ -933,8 +984,212 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
           </div>
         </div>
       )}
-      </>
-    )
+      
+      {/* Add Task Modal */}
+      {showAddTaskModal && (
+        <AddTaskModal
+          contact={contact}
+          onClose={() => setShowAddTaskModal(false)}
+          onTaskCreated={() => {
+            setShowAddTaskModal(false);
+            fetchContactTasks();
+          }}
+        />
+      )}
+
+      {/* Add Activity Modal */}
+      {showAddActivityModal && (
+        <AddActivityModalSimple
+          contact={contact}
+          onClose={() => setShowAddActivityModal(false)}
+          onActivityAdded={() => {
+            setShowAddActivityModal(false);
+            fetchContactActivities(); // Refresh activities after creation
+          }}
+        />
+      )}
+    </>
+  );
+};
+
+const AddActivityModalSimple = ({ contact, onClose, onActivityAdded }) => {
+  const [activityData, setActivityData] = useState({
+    type: 'call',
+    description: '',
+    contactId: contact?.id || null
+  });
+
+  const handleSubmit = async () => {
+    try {
+      const activityDataToSave = {
+        ...activityData,
+        date: new Date().toISOString(),
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      
+      await addDoc(collection(db, 'activities'), activityDataToSave);
+      alert('Activity created successfully!');
+      onActivityAdded();
+    } catch (error) {
+      console.error('Error creating activity:', error);
+      alert('Failed to create activity: ' + error.message);
+    }
+  };
+
+  const handleChange = (field, value) => {
+    setActivityData(prev => ({ ...prev, [field]: value }));
+  };
+
+  if (!contact) return null;
+
+  return (
+    <div style={addActivityModalStyles.overlay}>
+      <div style={addActivityModalStyles.modal}>
+        <button style={addActivityModalStyles.closeButton} onClick={onClose}>&times;</button>
+        <h2 style={addActivityModalStyles.title}>Add Activity for {contact.firstName} {contact.lastName}</h2>
+        
+        <div style={addActivityModalStyles.content}>
+          <div style={addActivityModalStyles.fieldRow}>
+            <label style={addActivityModalStyles.label}>Activity Type</label>
+            <select
+              value={activityData.type}
+              onChange={(e) => handleChange('type', e.target.value)}
+              style={addActivityModalStyles.input}
+            >
+              <option value="call">Phone Call</option>
+              <option value="email">Email</option>
+              <option value="text">Text Message</option>
+              <option value="meeting">Meeting</option>
+              <option value="showing">Property Showing</option>
+              <option value="follow_up">Follow Up</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div style={addActivityModalStyles.fieldRow}>
+            <label style={addActivityModalStyles.label}>Description</label>
+            <textarea
+              value={activityData.description}
+              onChange={(e) => handleChange('description', e.target.value)}
+              style={addActivityModalStyles.textarea}
+              rows={4}
+              placeholder="Describe the activity..."
+            />
+          </div>
+        </div>
+
+        <div style={addActivityModalStyles.actions}>
+          <button onClick={onClose} style={addActivityModalStyles.cancelButton}>Cancel</button>
+          <button onClick={handleSubmit} style={addActivityModalStyles.saveButton}>Create Activity</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AddTaskModal = ({ contact, onClose, onTaskCreated }) => {
+  const [taskData, setTaskData] = useState({
+    title: `Task for ${contact?.firstName || ''} ${contact?.lastName || ''}`,
+    description: '',
+    dueDate: new Date().toISOString().split('T')[0],
+    priority: 'medium',
+    contactId: contact?.id || null,
+    prospectId: null,
+    prospectBusinessId: null
+  });
+
+  const handleSubmit = async () => {
+    try {
+      const taskDataToSave = {
+        ...taskData,
+        status: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      
+      await addDoc(collection(db, 'tasks'), taskDataToSave);
+      alert('Task created successfully!');
+      onTaskCreated();
+    } catch (error) {
+      console.error('Error creating task:', error);
+      alert('Failed to create task: ' + error.message);
+    }
+  };
+
+  const handleChange = (field, value) => {
+    setTaskData(prev => ({ ...prev, [field]: value }));
+  };
+
+  if (!contact) return null;
+
+  return (
+    <div style={addTaskModalStyles.overlay}>
+      <div style={addTaskModalStyles.modal}>
+        <button style={addTaskModalStyles.closeButton} onClick={onClose}>&times;</button>
+        <h2 style={addTaskModalStyles.title}>Add Task for {contact.firstName} {contact.lastName}</h2>
+        
+        <div style={addTaskModalStyles.content}>
+          <div style={addTaskModalStyles.fieldRow}>
+            <label style={addTaskModalStyles.label}>Task Title</label>
+            <input
+              type="text"
+              value={taskData.title}
+              onChange={(e) => handleChange('title', e.target.value)}
+              style={addTaskModalStyles.input}
+            />
+          </div>
+
+          <div style={addTaskModalStyles.fieldRow}>
+            <label style={addTaskModalStyles.label}>Description</label>
+            <textarea
+              value={taskData.description}
+              onChange={(e) => handleChange('description', e.target.value)}
+              style={addTaskModalStyles.textarea}
+              rows={4}
+            />
+          </div>
+
+          <div style={addTaskModalStyles.fieldRow}>
+            <label style={addTaskModalStyles.label}>Due Date</label>
+            <input
+              type="date"
+              value={taskData.dueDate}
+              onChange={(e) => handleChange('dueDate', e.target.value)}
+              style={addTaskModalStyles.input}
+            />
+          </div>
+
+          <div style={addTaskModalStyles.fieldRow}>
+            <label style={addTaskModalStyles.label}>Priority</label>
+            <select
+              value={taskData.priority}
+              onChange={(e) => handleChange('priority', e.target.value)}
+              style={addTaskModalStyles.input}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={addTaskModalStyles.actions}>
+          <button
+            onClick={onClose}
+            style={addTaskModalStyles.cancelButton}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            style={addTaskModalStyles.saveButton}
+          >
+            Create Task
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
@@ -1007,6 +1262,263 @@ const fieldStyles = {
     minHeight: '50px',
     maxHeight: '80px',
     overflowY: 'auto',
+  },
+};
+
+const addActivityModalStyles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 7000,
+  },
+  modal: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    borderRadius: '18px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+    padding: '36px 48px 32px 48px',
+    minWidth: '500px',
+    maxWidth: '700px',
+    width: '90vw',
+    minHeight: '200px',
+    maxHeight: '95vh',
+    position: 'relative',
+    fontFamily: 'Georgia, serif',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: '14px',
+    right: '20px',
+    background: '#222',
+    border: 'none',
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    fontSize: '1.7rem',
+    color: '#fff',
+    cursor: 'pointer',
+    zIndex: 10,
+    transition: 'background 0.2s',
+    lineHeight: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+  },
+  title: {
+    fontSize: '1.45rem',
+    fontWeight: 700,
+    margin: '0 0 18px 0',
+    color: '#23233a',
+    letterSpacing: '0.01em',
+    textAlign: 'center',
+  },
+  content: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px',
+  },
+  fieldRow: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px',
+  },
+  label: {
+    fontWeight: 500,
+    color: '#444',
+    fontSize: '0.95rem',
+  },
+  input: {
+    width: '100%',
+    padding: '8px 12px',
+    border: '1px solid #ddd',
+    borderRadius: '6px',
+    fontSize: '1rem',
+    fontFamily: 'Georgia, serif',
+    background: 'rgba(255,255,255,0.8)',
+    outline: 'none',
+    transition: 'border 0.2s',
+  },
+  textarea: {
+    width: '100%',
+    padding: '8px 12px',
+    border: '1px solid #ddd',
+    borderRadius: '6px',
+    fontSize: '1rem',
+    fontFamily: 'Georgia, serif',
+    background: 'rgba(255,255,255,0.8)',
+    outline: 'none',
+    transition: 'border 0.2s',
+    resize: 'vertical',
+    minHeight: '80px',
+  },
+  actions: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginTop: 25,
+    gap: '12px',
+  },
+  cancelButton: {
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    color: '#222',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '10px 20px',
+    fontSize: '1rem',
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+    transition: 'background 0.2s',
+    flex: 1,
+  },
+  saveButton: {
+    backgroundColor: '#222',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '10px 20px',
+    fontSize: '1rem',
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+    transition: 'background 0.2s',
+    flex: 1,
+  },
+};
+
+const addTaskModalStyles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    background: 'rgba(30,30,40,0.18)',
+    zIndex: 7000,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modal: {
+    background: '#f8f6f1',
+    borderRadius: '18px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+    padding: '36px 32px 28px 32px',
+    minWidth: '400px',
+    maxWidth: '95vw',
+    position: 'relative',
+    fontFamily: 'Georgia, serif',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: '14px',
+    right: '20px',
+    background: '#222',
+    border: 'none',
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    fontSize: '1.7rem',
+    color: '#fff',
+    cursor: 'pointer',
+    zIndex: 10,
+    transition: 'background 0.2s',
+    lineHeight: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+  },
+  title: {
+    fontSize: '1.45rem',
+    fontWeight: 700,
+    margin: '0 0 18px 0',
+    color: '#23233a',
+    letterSpacing: '0.01em',
+    textAlign: 'center',
+  },
+  content: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px',
+  },
+  fieldRow: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px',
+  },
+  label: {
+    fontWeight: 500,
+    color: '#444',
+    fontSize: '0.95rem',
+  },
+  input: {
+    width: '100%',
+    padding: '8px 12px',
+    border: '1px solid #ddd',
+    borderRadius: '6px',
+    fontSize: '1rem',
+    fontFamily: 'Georgia, serif',
+    background: 'rgba(255,255,255,0.8)',
+    outline: 'none',
+    transition: 'border 0.2s',
+  },
+  textarea: {
+    width: '100%',
+    padding: '8px 12px',
+    border: '1px solid #ddd',
+    borderRadius: '6px',
+    fontSize: '1rem',
+    fontFamily: 'Georgia, serif',
+    background: 'rgba(255,255,255,0.8)',
+    outline: 'none',
+    transition: 'border 0.2s',
+    resize: 'vertical',
+    minHeight: '80px',
+  },
+  actions: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginTop: 25,
+    gap: '12px',
+  },
+  cancelButton: {
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    color: '#222',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '10px 20px',
+    fontSize: '1rem',
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+    transition: 'background 0.2s',
+    flex: 1,
+  },
+  saveButton: {
+    backgroundColor: '#222',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '10px 20px',
+    fontSize: '1rem',
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+    transition: 'background 0.2s',
+    flex: 1,
   },
 };
 

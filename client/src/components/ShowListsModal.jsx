@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 const ShowListsModal = ({ open, onClose, onShowContactDetail, contactDetailOpen = false }) => {
@@ -50,6 +50,26 @@ const ShowListsModal = ({ open, onClose, onShowContactDetail, contactDetailOpen 
     fetchContacts();
   }, [selectedList]);
 
+  // Delete list function
+  const handleDeleteList = async () => {
+    if (!selectedList) return;
+    
+    try {
+      // Delete the list from Firestore
+      await deleteDoc(doc(db, 'contactLists', selectedList.id));
+      
+      // Close the contacts modal
+      setShowContactsModal(false);
+      setSelectedList(null);
+      
+      // Refresh the lists by triggering the useEffect
+      setLists(prevLists => prevLists.filter(list => list.id !== selectedList.id));
+    } catch (error) {
+      console.error('Error deleting list:', error);
+      alert('Failed to delete list. Please try again.');
+    }
+  };
+
   if (!open) return null;
 
   return (
@@ -79,27 +99,33 @@ const ShowListsModal = ({ open, onClose, onShowContactDetail, contactDetailOpen 
                   style={{
                     ...styles.actionButton, 
                     margin: 0, 
-                    padding: '8px 0', 
-                    background: 'none', 
-                    color: '#000', 
+                    padding: '10px 22px', 
+                    background: '#222', 
+                    color: '#fff', 
                     fontWeight: 600, 
                     fontSize: '1.1rem', 
-                    textAlign: 'left',
-                    transition: 'color 0.2s',
+                    textAlign: 'center',
+                    transition: 'background 0.2s',
+                    borderRadius: '10px',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontFamily: 'Georgia, serif',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
                   }}
-                  onMouseEnter={(e) => e.target.style.color = '#fff'}
-                  onMouseLeave={(e) => e.target.style.color = '#000'}
+                  onMouseEnter={(e) => e.target.style.background = '#000'}
+                  onMouseLeave={(e) => e.target.style.background = '#222'}
                   onClick={() => { setSelectedList(list); setShowContactsModal(true); }}
                 >
                   {list.name}
                 </button>
                 <div style={styles.listMeta}>
-                  {list.contactIds ? `${list.contactIds.length} contacts` : '0 contacts'}
+                  <div style={styles.contactCount}>
+                    {list.contactIds ? `${list.contactIds.length} contacts` : '0 contacts'}
+                  </div>
                   {list.createdAt && (
-                    <span style={styles.listDate}>
-                      {' | Created: '}
-                      {list.createdAt.toDate ? list.createdAt.toDate().toLocaleDateString() : new Date(list.createdAt).toLocaleDateString()}
-                    </span>
+                    <div style={styles.listDate}>
+                      Created: {list.createdAt.toDate ? list.createdAt.toDate().toLocaleDateString() : new Date(list.createdAt).toLocaleDateString()}
+                    </div>
                   )}
                 </div>
               </li>
@@ -130,12 +156,20 @@ const ShowListsModal = ({ open, onClose, onShowContactDetail, contactDetailOpen 
                         if (onShowContactDetail) onShowContactDetail(contact);
                       }}
                     >
-                      {contact.firstName || ''} {contact.lastName || ''} {contact.email ? `(${contact.email})` : ''}
+                      {contact.firstName || ''} {contact.lastName || ''}
                     </button>
                   </li>
                 ))}
               </ul>
             )}
+            <div style={styles.deleteListSection}>
+              <button
+                style={styles.deleteListButton}
+                onClick={handleDeleteList}
+              >
+                Delete List
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -248,10 +282,17 @@ const styles = {
   listMeta: {
     color: '#666',
     fontSize: '0.95rem',
-    marginTop: '2px',
+    marginTop: '8px',
+    textAlign: 'center',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  contactCount: {
+    color: '#666',
+    fontSize: '0.95rem',
   },
   listDate: {
-    marginLeft: '8px',
     color: '#888',
     fontSize: '0.9rem',
   },
@@ -269,7 +310,7 @@ const styles = {
     marginBottom: '10px',
     transition: 'background 0.2s',
     boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
-    alignSelf: 'flex-start',
+    alignSelf: 'center',
   },
   contactsModalOverlay: {
     position: 'fixed',
@@ -308,6 +349,28 @@ const styles = {
   },
   contactListItem: {
     marginBottom: '4px',
+    display: 'flex',
+    justifyContent: 'center',
+  },
+  deleteListSection: {
+    marginTop: '20px',
+    paddingTop: '20px',
+    borderTop: '1px solid #eee',
+    display: 'flex',
+    justifyContent: 'center',
+  },
+  deleteListButton: {
+    background: '#d32f2f',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '10px 22px',
+    fontSize: '1rem',
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+    transition: 'background 0.2s',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
   },
 };
 

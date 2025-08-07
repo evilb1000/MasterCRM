@@ -538,18 +538,13 @@ const ChatBox = ({ onShowLists }) => {
                 <li><strong>Generate List:</strong> "generate list of [criteria]"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>🔍 Contact Search</h3>
-              <ul style={styles.commandList} className="command-list">
-                <li><strong>Find Contacts:</strong> "find all [criteria]"</li>
-                <li><strong>Show Contacts:</strong> "show me [criteria]"</li>
-                <li><strong>List Contacts:</strong> "list of [criteria]"</li>
-              </ul>
-              
               <h3 style={styles.sectionTitle}>📊 Contact Lists</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Show Lists:</strong> "show me my lists"</li>
                 <li><strong>Display Lists:</strong> "display my lists"</li>
                 <li><strong>List Lists:</strong> "list my lists"</li>
+                <li><strong>See Lists:</strong> "see my lists"</li>
+                <li><strong>What Lists:</strong> "what are my lists"</li>
               </ul>
               
               <h3 style={styles.sectionTitle}>🏢 Business Prospecting</h3>
@@ -558,6 +553,27 @@ const ChatBox = ({ onShowLists }) => {
                 <li><strong>Search Companies:</strong> "search for restaurants in Pittsburgh"</li>
                 <li><strong>Prospect Companies:</strong> "prospect tech companies in Bethel Park"</li>
                 <li><strong>Locate Businesses:</strong> "locate healthcare providers in Bridgeville"</li>
+                <li><strong>Industry Search:</strong> "find dentists in Bridgeville"</li>
+                <li><strong>Service Search:</strong> "search for auto repair shops in Mt. Lebanon"</li>
+                <li><strong>Professional Services:</strong> "prospect law firms in Pittsburgh"</li>
+                <li><strong>Retail Search:</strong> "find coffee shops in Bethel Park"</li>
+              </ul>
+              
+              <h3 style={styles.sectionTitle}>📋 Task Creation</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Create Task:</strong> "create a task for [contact] [date] regarding [description]"</li>
+                <li><strong>Add Task:</strong> "add task for [contact] [date] about [description]"</li>
+                <li><strong>Schedule Task:</strong> "schedule task for [contact] [date] to [description]"</li>
+                <li><strong>New Task:</strong> "new task for [contact] [date] [description]"</li>
+              </ul>
+              
+              <h3 style={styles.sectionTitle}>📅 Dynamic Date Parsing</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Today:</strong> "create a task for Elodie Wren today about calling Martin"</li>
+                <li><strong>Tomorrow:</strong> "create task for John Smith tomorrow regarding follow up"</li>
+                <li><strong>Next Week:</strong> "add task for Jane Doe next Tuesday about client meeting"</li>
+                <li><strong>Specific Date:</strong> "create task for Acme Corp August 22nd about contract review"</li>
+                <li><strong>Relative Time:</strong> "add task for contact in 2 weeks about property showing"</li>
               </ul>
               
               <h3 style={styles.sectionTitle}>📝 Available Fields</h3>
