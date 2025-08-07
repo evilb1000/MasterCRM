@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { collection, getDocs, doc, updateDoc, query, where, addDoc } from 'firebase/firestore';
 import { db, firebase } from '../firebase';
 import { Link } from 'react-router-dom';
+import ContactModal from '../components/ContactModal';
 
 const Listings = () => {
   const [listings, setListings] = useState([]);
@@ -429,6 +430,8 @@ const Listings = () => {
                           <button
                             style={styles.contactListButton}
                             onClick={() => handleContactListClick(list)}
+                            onMouseEnter={(e) => e.target.style.background = '#000'}
+                            onMouseLeave={(e) => e.target.style.background = '#222'}
                           >
                             <span style={styles.contactListName}>{list.name}</span>
                           </button>
@@ -504,6 +507,8 @@ const Listings = () => {
                     key={contact.id}
                     style={styles.contactButton}
                     onClick={() => handleContactClick(contact)}
+                    onMouseEnter={(e) => e.target.style.background = '#000'}
+                    onMouseLeave={(e) => e.target.style.background = '#222'}
                   >
                     <div style={styles.contactButtonName}>
                       {contact.firstName && contact.lastName 
@@ -521,64 +526,12 @@ const Listings = () => {
           </div>
         </div>
       )}
-      {contactModalOpen && selectedContact && (
-        <div style={styles.contactModalOverlay} onClick={closeContactModal}>
-          <div style={styles.contactModal} onClick={e => e.stopPropagation()}>
-            <button style={styles.closeContactModalButton} onClick={closeContactModal}>×</button>
-            <h3 style={styles.contactModalTitle}>Contact Details</h3>
-            <div style={styles.contactModalField}>
-              <span style={styles.label}>Name:</span> 
-              {selectedContact.firstName && selectedContact.lastName 
-                ? `${selectedContact.firstName} ${selectedContact.lastName}`
-                : selectedContact.firstName || selectedContact.lastName || 'N/A'
-              }
-            </div>
-            {selectedContact.company && (
-              <div style={styles.contactModalField}>
-                <span style={styles.label}>Company:</span> {selectedContact.company}
-              </div>
-            )}
-            {selectedContact.email && (
-              <div style={styles.contactModalField}>
-                <span style={styles.label}>Email:</span> {selectedContact.email}
-              </div>
-            )}
-            {selectedContact.phone && (
-              <div style={styles.contactModalField}>
-                <span style={styles.label}>Phone:</span> {selectedContact.phone}
-              </div>
-            )}
-            {selectedContact.businessSector && (
-              <div style={styles.contactModalField}>
-                <span style={styles.label}>Sector:</span> {selectedContact.businessSector}
-              </div>
-            )}
-            <div style={styles.contactActivitiesSection}>
-              <div style={styles.contactActivitiesTitle}>Activities</div>
-              {contactActivitiesLoading ? (
-                <div style={styles.contactActivitiesLoading}>Loading activities...</div>
-              ) : contactActivities.length === 0 ? (
-                <div style={styles.contactActivitiesEmpty}>No activities for this contact.</div>
-              ) : (
-                <ul style={styles.contactActivitiesList}>
-                  {contactActivities.map(activity => (
-                    <li key={activity.id} style={styles.contactActivityItem}>
-                      <div style={styles.contactActivityType}>{activity.type || 'Activity'}</div>
-                      <div style={styles.contactActivityNotes}>{activity.notes || 'No notes'}</div>
-                      <div style={styles.contactActivityTimestamp}>
-                        {activity.timestamp?.toDate?.() ? 
-                          activity.timestamp.toDate().toLocaleDateString() : 
-                          'Unknown date'
-                        }
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <ContactModal
+        open={contactModalOpen}
+        onClose={closeContactModal}
+        contact={selectedContact}
+        mode="view"
+      />
       {createModalOpen && (
         <div style={styles.modalOverlay} onClick={closeCreateModal}>
           <div style={styles.modal} onClick={e => e.stopPropagation()}>
@@ -873,15 +826,23 @@ const styles = {
   },
   contactListName: {
     fontWeight: 500,
-    color: '#1a237e',
+    color: '#fff',
   },
   contactListButton: {
-    background: 'none',
+    background: '#222',
+    color: '#fff',
     border: 'none',
-    padding: 0,
+    borderRadius: '10px',
+    padding: '10px 22px',
     cursor: 'pointer',
-    textAlign: 'left',
+    textAlign: 'center',
     width: '100%',
+    fontSize: '1.1rem',
+    fontWeight: 600,
+    fontFamily: 'Georgia, serif',
+    transition: 'background 0.2s',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+    marginBottom: '8px',
   },
   contactPanelOverlay: {
     position: 'fixed',
@@ -889,38 +850,54 @@ const styles = {
     left: 0,
     width: '100vw',
     height: '100vh',
-    background: 'rgba(0,0,0,0.25)',
+    background: 'rgba(30,30,40,0.18)',
     zIndex: 3000,
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
   },
   contactPanel: {
-    background: 'rgba(255,255,255,0.97)',
-    width: '400px',
-    height: '100vh',
+    background: '#f8f6f1',
+    borderRadius: '18px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
     padding: '36px 32px 28px 32px',
-    boxShadow: '-8px 0 32px rgba(0,0,0,0.15)',
-    fontFamily: 'Georgia, serif',
+    minWidth: '350px',
+    maxWidth: '95vw',
+    minHeight: '100px',
     position: 'relative',
-    overflowY: 'auto',
+    fontFamily: 'Georgia, serif',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    gap: '10px',
   },
   closeContactPanelButton: {
     position: 'absolute',
-    top: '12px',
-    right: '18px',
-    background: 'none',
+    top: '14px',
+    right: '20px',
+    background: '#222',
     border: 'none',
-    fontSize: '2rem',
-    color: '#222',
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    fontSize: '1.7rem',
+    color: '#fff',
     cursor: 'pointer',
     zIndex: 10,
+    transition: 'background 0.2s',
+    lineHeight: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
   },
   contactPanelTitle: {
-    fontSize: '1.5rem',
-    fontWeight: 600,
+    fontSize: '1.45rem',
+    fontWeight: 700,
     margin: '0 0 18px 0',
-    color: '#222',
+    color: '#23233a',
+    letterSpacing: '0.01em',
+    textAlign: 'center',
   },
   contactsLoading: {
     color: '#888',
@@ -933,28 +910,40 @@ const styles = {
     fontSize: '1rem',
   },
   contactsList: {
+    listStyle: 'none',
+    padding: 0,
+    margin: 0,
     display: 'flex',
     flexDirection: 'column',
     gap: '8px',
   },
   contactButton: {
-    background: 'rgba(0,0,0,0.05)',
-    border: '1px solid rgba(0,0,0,0.1)',
-    borderRadius: '8px',
-    padding: '12px 16px',
+    background: '#222',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '10px',
+    padding: '10px 22px',
+    fontSize: '1rem',
+    fontWeight: 500,
     cursor: 'pointer',
-    textAlign: 'left',
-    transition: 'all 0.2s',
+    fontFamily: 'Georgia, serif',
+    marginTop: '10px',
+    marginBottom: '10px',
+    transition: 'background 0.2s',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+    alignSelf: 'center',
+    textAlign: 'center',
+    width: '100%',
   },
   contactButtonName: {
     fontSize: '1rem',
     fontWeight: 500,
-    color: '#222',
+    color: '#fff',
     marginBottom: '4px',
   },
   contactButtonCompany: {
     fontSize: '0.9rem',
-    color: '#666',
+    color: '#fff',
     fontStyle: 'italic',
   },
   contactModalOverlay: {
