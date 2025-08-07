@@ -5,42 +5,63 @@ import { ENDPOINTS } from '../config.js';
 export const isTaskCreationCommand = (message) => {
   const lowerMessage = message.toLowerCase();
   
-  // Primary task creation patterns (highest priority)
-  const primaryTaskPatterns = [
+  // HIGH PRIORITY: Explicit task creation patterns that MUST match
+  const explicitTaskPatterns = [
     /\bcreate\s+(?:a\s+)?task\s+for\s+/i,
     /\badd\s+(?:a\s+)?task\s+for\s+/i,
     /\bschedule\s+(?:a\s+)?task\s+for\s+/i,
     /\bnew\s+task\s+for\s+/i
   ];
   
-  // Check if message contains primary task creation patterns
-  const hasPrimaryTaskPattern = primaryTaskPatterns.some(pattern => pattern.test(message));
+  // Check for explicit task patterns first (highest priority)
+  const hasExplicitTaskPattern = explicitTaskPatterns.some(pattern => pattern.test(message));
   
-  // Secondary task patterns (lower priority)
-  const secondaryTaskPatterns = [
+  // If it has explicit task patterns, it's definitely a task creation command
+  if (hasExplicitTaskPattern) {
+    return true;
+  }
+  
+  // MEDIUM PRIORITY: Task patterns with date indicators
+  const taskWithDatePatterns = [
     /\btask\s+for\s+/i,
     /\bcreate\s+task\s+/i,
     /\badd\s+task\s+/i
   ];
   
-  const hasSecondaryTaskPattern = secondaryTaskPatterns.some(pattern => pattern.test(message));
-  
-  // Check for explicit task keywords
-  const explicitTaskKeywords = [
-    'create task', 'add task', 'new task', 'schedule task'
-  ];
-  
-  const hasExplicitTaskKeyword = explicitTaskKeywords.some(keyword => lowerMessage.includes(keyword));
+  const hasTaskWithDatePattern = taskWithDatePatterns.some(pattern => pattern.test(message));
   
   // Check for date/time indicators
   const dateTimeIndicators = [
-    'today', 'tomorrow', 'next', 'this', 'in', 'on', 'due', 'by', 'when'
+    'today', 'tomorrow', 'next', 'this', 'in', 'on', 'due', 'by', 'when', 'set date'
   ];
   
   const hasDateTimeIndicator = dateTimeIndicators.some(indicator => lowerMessage.includes(indicator));
   
-  // Return true if it has primary task patterns OR (secondary patterns AND date/time indicators)
-  return hasPrimaryTaskPattern || (hasSecondaryTaskPattern && hasDateTimeIndicator) || (hasExplicitTaskKeyword && hasDateTimeIndicator);
+  // Check for listing-specific keywords (addresses, property terms)
+  const listingKeywords = [
+    'listing', 'property', 'address', 'street', 'drive', 'avenue', 'road', 'lane', 'court', 'place'
+  ];
+  
+  const hasListingKeyword = listingKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  // Check for numeric patterns (addresses often contain numbers)
+  const hasNumericPattern = /\d+/.test(message);
+  
+  // Return true if:
+  // 1. Has explicit task patterns (highest priority)
+  // 2. Has task patterns with date indicators
+  // 3. Has task keywords with date indicators
+  // 4. Has task keywords with listing keywords (for listing tasks)
+  // 5. Has task keywords with numeric patterns (for address-based tasks)
+  
+  const explicitTaskKeywords = ['create task', 'add task', 'new task', 'schedule task'];
+  const hasExplicitTaskKeyword = explicitTaskKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  return hasExplicitTaskPattern || 
+         (hasTaskWithDatePattern && hasDateTimeIndicator) || 
+         (hasExplicitTaskKeyword && hasDateTimeIndicator) ||
+         (hasExplicitTaskKeyword && hasListingKeyword) ||
+         (hasExplicitTaskKeyword && hasNumericPattern);
 };
 
 // Process task creation command
@@ -61,7 +82,8 @@ export const processTaskCreation = async (command) => {
         message: response.data.message,
         taskId: response.data.taskId,
         task: response.data.task,
-        contact: response.data.contact
+        contact: response.data.contact,
+        listing: response.data.listing
       };
     } else {
       return {

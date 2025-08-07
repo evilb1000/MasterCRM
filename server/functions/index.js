@@ -524,7 +524,7 @@ export const aiCreateTask = onRequest(
       
       // Step 1: Analyze user intent with GPT for task creation
       const taskIntentPrompt = `
-You are a CRM assistant that analyzes user requests to create tasks for contacts.
+You are a CRM assistant that analyzes user requests to create tasks for contacts OR listings.
 
 CURRENT DATE CONTEXT:
 - Today is ${currentDayName}, ${currentMonthName} ${currentDay}, ${currentYear}
@@ -532,15 +532,25 @@ CURRENT DATE CONTEXT:
 - Use this as the reference point for all date calculations
 
 Available actions:
-- CREATE_TASK: User wants to create a task for a specific contact
+- CREATE_TASK: User wants to create a task for a specific contact OR listing
 
 Task creation patterns to look for:
+
+CONTACT TASKS:
 - "create a task for [contact] [date] regarding [description]"
 - "create task for [contact] [date] about [description]"
 - "add task for [contact] [date] [description]"
 - "create a task for [contact] [date] to [description]"
 - "task for [contact] [date] [description]"
 - "create task [contact] [date] [description]"
+
+LISTING TASKS:
+- "create a task for listing [address] [date] regarding [description]"
+- "create task for listing [address] [date] about [description]"
+- "add task for listing [address] [date] [description]"
+- "create a task for listing [address] [date] to [description]"
+- "task for listing [address] [date] [description]"
+- "create task listing [address] [date] [description]"
 
 Date parsing examples (based on current date ${currentDateString}):
 - "today" → ${currentDateString}
@@ -568,12 +578,19 @@ Contact identification can be by:
 - Email address (contains @)
 - Company name
 
+Listing identification can be by:
+- Street address (e.g., "123 Main St", "Iron City Drive")
+- Property address
+- Listing address
+
 Analyze the following user request and respond with ONLY a JSON object in this exact format:
 {
   "intent": "CREATE_TASK",
   "confidence": 0.0-1.0,
   "extractedData": {
-    "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
+    "taskType": "contact|listing",
+    "contactIdentifier": "email or firstName+lastName or company (if contact task)",
+    "listingIdentifier": "address or property identifier (if listing task)",
     "taskTitle": "suggested task title based on description",
     "taskDescription": "full description of the task",
     "dueDate": "parsed date in YYYY-MM-DD format",
@@ -586,12 +603,21 @@ Analyze the following user request and respond with ONLY a JSON object in this e
 If the request is unclear or doesn't match task creation patterns, set intent to GENERAL_QUERY and confidence to 0.0.
 
 Examples of CREATE_TASK commands:
+
+CONTACT TASKS:
 - "create a task for Elodie Wren today regarding emailing Martin"
 - "create task for john@example.com tomorrow about follow up call"
 - "add task for John Smith next Tuesday to review proposal"
 - "task for Acme Corp August 22nd regarding contract discussion"
 - "create a task for Jane Doe in 3 days about property showing"
 - "create task for elodie@example.com next week regarding client meeting"
+
+LISTING TASKS:
+- "create a task for listing 123 Main St tomorrow about taking photos"
+- "add task for listing Iron City Drive next Tuesday to create marketing material"
+- "create task for listing 456 Oak Avenue August 22nd regarding property showing"
+- "task for listing 789 Pine Street in 3 days about updating listing description"
+- "create a task for listing 321 Elm Road next week regarding client meeting"
 
 User request: "${command}"
 
@@ -893,6 +919,91 @@ async function findContact(identifier) {
     ref: contactDoc.ref,
     data: contactDoc.data()
   };
+}
+
+// Helper function to find listing by identifier
+async function findListing(identifier) {
+  logger.info('🔍 findListing called with identifier:', identifier);
+  const listingsRef = db.collection('listings');
+  let listingQuery;
+
+  // Clean the identifier
+  const cleanIdentifier = identifier.trim();
+  logger.info('🔍 Cleaned listing identifier:', cleanIdentifier);
+
+  // Get all listings to search through them (since Firestore doesn't support partial text search)
+  logger.info('🔍 Fetching all listings for flexible search...');
+  const allListingsSnapshot = await listingsRef.get();
+  
+  if (allListingsSnapshot.empty) {
+    logger.info('❌ No listings found in database');
+    return null;
+  }
+
+  // Search through all listings for matches
+  for (const listingDoc of allListingsSnapshot.docs) {
+    const listingData = listingDoc.data();
+    logger.info('🔍 Checking listing:', listingData);
+    
+    // Check streetAddress (most common)
+    if (listingData.streetAddress) {
+      const streetAddress = listingData.streetAddress.trim();
+      if (streetAddress.toLowerCase().includes(cleanIdentifier.toLowerCase()) || 
+          cleanIdentifier.toLowerCase().includes(streetAddress.toLowerCase())) {
+        logger.info('✅ Found listing by streetAddress match:', streetAddress);
+        return {
+          id: listingDoc.id,
+          ref: listingDoc.ref,
+          data: listingData
+        };
+      }
+    }
+    
+    // Check address field
+    if (listingData.address) {
+      const address = listingData.address.trim();
+      if (address.toLowerCase().includes(cleanIdentifier.toLowerCase()) || 
+          cleanIdentifier.toLowerCase().includes(address.toLowerCase())) {
+        logger.info('✅ Found listing by address match:', address);
+        return {
+          id: listingDoc.id,
+          ref: listingDoc.ref,
+          data: listingData
+        };
+      }
+    }
+    
+    // Check name field
+    if (listingData.name) {
+      const name = listingData.name.trim();
+      if (name.toLowerCase().includes(cleanIdentifier.toLowerCase()) || 
+          cleanIdentifier.toLowerCase().includes(name.toLowerCase())) {
+        logger.info('✅ Found listing by name match:', name);
+        return {
+          id: listingDoc.id,
+          ref: listingDoc.ref,
+          data: listingData
+        };
+      }
+    }
+    
+    // Check title field
+    if (listingData.title) {
+      const title = listingData.title.trim();
+      if (title.toLowerCase().includes(cleanIdentifier.toLowerCase()) || 
+          cleanIdentifier.toLowerCase().includes(title.toLowerCase())) {
+        logger.info('✅ Found listing by title match:', title);
+        return {
+          id: listingDoc.id,
+          ref: listingDoc.ref,
+          data: listingData
+        };
+      }
+    }
+  }
+
+  logger.info('❌ No listings found for identifier:', cleanIdentifier);
+  return null;
 }
 
 // Helper function to log actions
@@ -1905,17 +2016,9 @@ async function handleTaskCreation(extractedData, originalCommand) {
   try {
     logger.info('🔧 Starting task creation with data:', extractedData);
     
-    const { contactIdentifier, taskTitle, taskDescription, dueDate, priority = 'medium', status = 'pending' } = extractedData;
+    const { taskType, contactIdentifier, listingIdentifier, taskTitle, taskDescription, dueDate, priority = 'medium', status = 'pending' } = extractedData;
     
     // Validate required fields
-    if (!contactIdentifier) {
-      return {
-        success: false,
-        error: 'Contact identifier is required',
-        details: 'No contact specified in the task creation request'
-      };
-    }
-    
     if (!taskDescription) {
       return {
         success: false,
@@ -1932,65 +2035,147 @@ async function handleTaskCreation(extractedData, originalCommand) {
       };
     }
     
-    // Find the contact
-    logger.info('🔍 Looking for contact:', contactIdentifier);
-    const contactResult = await findContact(contactIdentifier);
-    
-    if (!contactResult) {
-      return {
-        success: false,
-        error: 'Contact not found',
-        details: `Could not find contact: ${contactIdentifier}`,
-        suggestion: 'Please check the contact name, email, or company and try again.'
-      };
-    }
-    
-    logger.info('✅ Found contact:', contactResult);
-    
-    // Extract contact data from the result
-    const contactData = contactResult.data;
-    const contactId = contactResult.id;
-    
-    // Create the task
-    const taskData = {
+    let taskData = {
       title: taskTitle || taskDescription,
       description: taskDescription,
       dueDate: dueDate,
       priority: priority,
       status: status,
-      contactId: contactId,
+      contactId: null,
+      listingId: null,
       prospectId: null,
       prospectBusinessId: null,
       createdAt: new Date(),
       updatedAt: new Date()
     };
     
-    logger.info('🔧 Creating task with data:', taskData);
+    let result = {};
     
-    // Add task to Firestore
-    const taskRef = await db.collection('tasks').add(taskData);
-    
-    logger.info('✅ Task created successfully with ID:', taskRef.id);
-    
-    // Log the action
-    await logTaskAction(originalCommand, 'create_task', taskRef.id, taskData, contactData);
-    
-    return {
-      success: true,
-      message: `Task created successfully for ${contactData.firstName} ${contactData.lastName}`,
-      taskId: taskRef.id,
-      task: {
-        ...taskData,
-        id: taskRef.id
-      },
-      contact: {
-        id: contactId,
-        firstName: contactData.firstName,
-        lastName: contactData.lastName,
-        email: contactData.email,
-        company: contactData.company
+    if (taskType === 'contact') {
+      // Handle contact task
+      if (!contactIdentifier) {
+        return {
+          success: false,
+          error: 'Contact identifier is required',
+          details: 'No contact specified in the task creation request'
+        };
       }
-    };
+      
+      logger.info('🔍 Looking for contact:', contactIdentifier);
+      const contactResult = await findContact(contactIdentifier);
+      
+      if (!contactResult) {
+        return {
+          success: false,
+          error: 'Contact not found',
+          details: `Could not find contact: ${contactIdentifier}`,
+          suggestion: 'Please check the contact name, email, or company and try again.'
+        };
+      }
+      
+      logger.info('✅ Found contact:', contactResult);
+      
+      // Extract contact data from the result
+      const contactData = contactResult.data;
+      const contactId = contactResult.id;
+      
+      // Update task data with contact info
+      taskData.contactId = contactId;
+      
+      logger.info('🔧 Creating contact task with data:', taskData);
+      
+      // Add task to Firestore
+      const taskRef = await db.collection('tasks').add(taskData);
+      
+      logger.info('✅ Contact task created successfully with ID:', taskRef.id);
+      
+      // Log the action
+      await logTaskAction(originalCommand, 'create_task', taskRef.id, taskData, contactData);
+      
+      result = {
+        success: true,
+        message: `Task created successfully for ${contactData.firstName} ${contactData.lastName}`,
+        taskId: taskRef.id,
+        task: {
+          ...taskData,
+          id: taskRef.id
+        },
+        contact: {
+          id: contactId,
+          firstName: contactData.firstName,
+          lastName: contactData.lastName,
+          email: contactData.email,
+          company: contactData.company
+        }
+      };
+      
+    } else if (taskType === 'listing') {
+      // Handle listing task
+      if (!listingIdentifier) {
+        return {
+          success: false,
+          error: 'Listing identifier is required',
+          details: 'No listing specified in the task creation request'
+        };
+      }
+      
+      logger.info('🔍 Looking for listing:', listingIdentifier);
+      const listingResult = await findListing(listingIdentifier);
+      
+      if (!listingResult) {
+        return {
+          success: false,
+          error: 'Listing not found',
+          details: `Could not find listing: ${listingIdentifier}`,
+          suggestion: 'Please check the listing address and try again.'
+        };
+      }
+      
+      logger.info('✅ Found listing:', listingResult);
+      
+      // Extract listing data from the result
+      const listingData = listingResult.data;
+      const listingId = listingResult.id;
+      
+      // Update task data with listing info
+      taskData.listingId = listingId;
+      
+      logger.info('🔧 Creating listing task with data:', taskData);
+      
+      // Add task to Firestore
+      const taskRef = await db.collection('tasks').add(taskData);
+      
+      logger.info('✅ Listing task created successfully with ID:', taskRef.id);
+      
+      // Log the action
+      await logListingTaskAction(originalCommand, 'create_task', taskRef.id, taskData, listingData);
+      
+      result = {
+        success: true,
+        message: `Task created successfully for listing: ${listingData.streetAddress || listingData.address || listingData.name || 'Unknown Listing'}`,
+        taskId: taskRef.id,
+        task: {
+          ...taskData,
+          id: taskRef.id
+        },
+        listing: {
+          id: listingId,
+          streetAddress: listingData.streetAddress,
+          address: listingData.address,
+          name: listingData.name,
+          title: listingData.title
+        }
+      };
+      
+    } else {
+      return {
+        success: false,
+        error: 'Invalid task type',
+        details: 'Task type must be either "contact" or "listing"'
+      };
+    }
+    
+    return result;
     
   } catch (error) {
     logger.error('❌ Error in handleTaskCreation:', error);
@@ -2019,6 +2204,26 @@ async function logTaskAction(command, action, taskId, taskData, contact) {
     });
   } catch (error) {
     logger.error('Failed to log task action:', error);
+  }
+}
+
+// Helper function to log listing task actions
+async function logListingTaskAction(command, action, taskId, taskData, listing) {
+  try {
+    await db.collection('ai_task_actions').add({
+      command: command,
+      action: action,
+      taskId: taskId,
+      taskTitle: taskData.title,
+      listingId: listing.id,
+      listingName: listing.streetAddress || listing.address || listing.name || 'Unknown Listing',
+      dueDate: taskData.dueDate,
+      priority: taskData.priority,
+      timestamp: new Date(),
+      success: true
+    });
+  } catch (error) {
+    logger.error('Failed to log listing task action:', error);
   }
 }
 

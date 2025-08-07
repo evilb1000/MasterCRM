@@ -185,8 +185,51 @@ const ChatBox = ({ onShowLists }) => {
         console.log('🔍 Activity pattern detected in message:', currentMessage);
       }
 
-      // Check if this is a combined activity creation and listing attachment command (highest priority)
-      if (isCombinedActivity) {
+      // Check if this is a task creation command (HIGHEST PRIORITY - before list creation)
+      if (isTaskCreation) {
+        console.log('📋 Routing to Task Creation endpoint');
+        const result = await processTaskCreation(currentMessage);
+        
+        if (result.success) {
+          // Handle both contact and listing tasks
+          if (result.contact) {
+            // Contact task
+            responseText = `${result.message}\n\nTask Details:\n- Title: ${result.task.title}\n- Description: ${result.task.description}\n- Due Date: ${result.task.dueDate}\n- Priority: ${result.task.priority}\n- Status: ${result.task.status}\n- Task ID: ${result.taskId}\n\nContact: ${result.contact.firstName} ${result.contact.lastName} (${result.contact.email})`;
+            
+            // Emit a custom event to refresh tasks
+            console.log('🎯 AI Contact Task created, dispatching refresh event');
+            window.dispatchEvent(new CustomEvent('aiTaskCreated', {
+              detail: {
+                taskId: result.taskId,
+                contactId: result.contact.id,
+                taskTitle: result.task.title,
+                dueDate: result.task.dueDate
+              }
+            }));
+          } else if (result.listing) {
+            // Listing task
+            const listingName = result.listing.streetAddress || result.listing.address || result.listing.name || 'Unknown Listing';
+            responseText = `${result.message}\n\nTask Details:\n- Title: ${result.task.title}\n- Description: ${result.task.description}\n- Due Date: ${result.task.dueDate}\n- Priority: ${result.task.priority}\n- Status: ${result.task.status}\n- Task ID: ${result.taskId}\n\nListing: ${listingName}`;
+            
+            // Emit a custom event to refresh tasks
+            console.log('🎯 AI Listing Task created, dispatching refresh event');
+            window.dispatchEvent(new CustomEvent('aiTaskCreated', {
+              detail: {
+                taskId: result.taskId,
+                listingId: result.listing.id,
+                taskTitle: result.task.title,
+                dueDate: result.task.dueDate
+              }
+            }));
+          }
+          
+          actionType = 'task_creation';
+        } else {
+          throw new Error(result.error);
+        }
+      }
+      // Check if this is a combined activity creation and listing attachment command
+      else if (isCombinedActivity) {
         console.log('🔄 Routing to Combined Activity Creation and Listing Attachment endpoint');
         const result = await processCombinedActivityCreationAndListingAttachment(currentMessage);
         
@@ -256,25 +299,45 @@ const ChatBox = ({ onShowLists }) => {
           throw new Error(result.error);
         }
       }
-      // Check if this is a task creation command
+      // Check if this is a task creation command (HIGHEST PRIORITY - before list creation)
       else if (isTaskCreation) {
         console.log('📋 Routing to Task Creation endpoint');
         const result = await processTaskCreation(currentMessage);
         
         if (result.success) {
-          responseText = `${result.message}\n\nTask Details:\n- Title: ${result.task.title}\n- Description: ${result.task.description}\n- Due Date: ${result.task.dueDate}\n- Priority: ${result.task.priority}\n- Status: ${result.task.status}\n- Task ID: ${result.taskId}\n\nContact: ${result.contact.firstName} ${result.contact.lastName} (${result.contact.email})`;
-          actionType = 'task_creation';
+          // Handle both contact and listing tasks
+          if (result.contact) {
+            // Contact task
+            responseText = `${result.message}\n\nTask Details:\n- Title: ${result.task.title}\n- Description: ${result.task.description}\n- Due Date: ${result.task.dueDate}\n- Priority: ${result.task.priority}\n- Status: ${result.task.status}\n- Task ID: ${result.taskId}\n\nContact: ${result.contact.firstName} ${result.contact.lastName} (${result.contact.email})`;
+            
+            // Emit a custom event to refresh tasks
+            console.log('🎯 AI Contact Task created, dispatching refresh event');
+            window.dispatchEvent(new CustomEvent('aiTaskCreated', {
+              detail: {
+                taskId: result.taskId,
+                contactId: result.contact.id,
+                taskTitle: result.task.title,
+                dueDate: result.task.dueDate
+              }
+            }));
+          } else if (result.listing) {
+            // Listing task
+            const listingName = result.listing.streetAddress || result.listing.address || result.listing.name || 'Unknown Listing';
+            responseText = `${result.message}\n\nTask Details:\n- Title: ${result.task.title}\n- Description: ${result.task.description}\n- Due Date: ${result.task.dueDate}\n- Priority: ${result.task.priority}\n- Status: ${result.task.status}\n- Task ID: ${result.taskId}\n\nListing: ${listingName}`;
+            
+            // Emit a custom event to refresh tasks
+            console.log('🎯 AI Listing Task created, dispatching refresh event');
+            window.dispatchEvent(new CustomEvent('aiTaskCreated', {
+              detail: {
+                taskId: result.taskId,
+                listingId: result.listing.id,
+                taskTitle: result.task.title,
+                dueDate: result.task.dueDate
+              }
+            }));
+          }
           
-          // Emit a custom event to refresh tasks
-          console.log('🎯 AI Task created, dispatching refresh event');
-          window.dispatchEvent(new CustomEvent('aiTaskCreated', {
-            detail: {
-              taskId: result.taskId,
-              contactId: result.contact.id,
-              taskTitle: result.task.title,
-              dueDate: result.task.dueDate
-            }
-          }));
+          actionType = 'task_creation';
         } else {
           throw new Error(result.error);
         }
@@ -561,19 +624,26 @@ const ChatBox = ({ onShowLists }) => {
               
               <h3 style={styles.sectionTitle}>📋 Task Creation</h3>
               <ul style={styles.commandList} className="command-list">
-                <li><strong>Create Task:</strong> "create a task for [contact] [date] regarding [description]"</li>
-                <li><strong>Add Task:</strong> "add task for [contact] [date] about [description]"</li>
-                <li><strong>Schedule Task:</strong> "schedule task for [contact] [date] to [description]"</li>
-                <li><strong>New Task:</strong> "new task for [contact] [date] [description]"</li>
+                <li><strong>Contact Tasks:</strong></li>
+                <li>• "create a task for [contact] [date] regarding [description]"</li>
+                <li>• "add task for [contact] [date] about [description]"</li>
+                <li>• "schedule task for [contact] [date] to [description]"</li>
+                <li><strong>Listing Tasks:</strong></li>
+                <li>• "create a task for listing [address] [date] regarding [description]"</li>
+                <li>• "add task for listing [address] [date] about [description]"</li>
+                <li>• "task for listing [address] [date] [description]"</li>
               </ul>
               
               <h3 style={styles.sectionTitle}>📅 Dynamic Date Parsing</h3>
               <ul style={styles.commandList} className="command-list">
-                <li><strong>Today:</strong> "create a task for Elodie Wren today about calling Martin"</li>
-                <li><strong>Tomorrow:</strong> "create task for John Smith tomorrow regarding follow up"</li>
-                <li><strong>Next Week:</strong> "add task for Jane Doe next Tuesday about client meeting"</li>
-                <li><strong>Specific Date:</strong> "create task for Acme Corp August 22nd about contract review"</li>
-                <li><strong>Relative Time:</strong> "add task for contact in 2 weeks about property showing"</li>
+                <li><strong>Contact Examples:</strong></li>
+                <li>• "create a task for Elodie Wren today about calling Martin"</li>
+                <li>• "create task for John Smith tomorrow regarding follow up"</li>
+                <li>• "add task for Jane Doe next Tuesday about client meeting"</li>
+                <li><strong>Listing Examples:</strong></li>
+                <li>• "create a task for listing 631 Iron City Drive tomorrow about taking photos"</li>
+                <li>• "add task for listing 420 Main St next Tuesday to create marketing material"</li>
+                <li>• "task for listing 123 Oak Avenue August 22nd about property showing"</li>
               </ul>
               
               <h3 style={styles.sectionTitle}>📝 Available Fields</h3>

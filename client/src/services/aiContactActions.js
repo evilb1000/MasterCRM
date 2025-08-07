@@ -165,22 +165,30 @@ export function isListCreationCommand(message) {
     'sector', 'industry'
   ];
   
-  // More specific patterns that indicate list creation
+  // More specific patterns that indicate list creation (but exclude task-related patterns)
   const specificPatterns = [
-    /create.*list/i,
-    /make.*list/i,
-    /build.*list/i,
-    /generate.*list/i,
-    /list of.*/i,
-    /show me.*/i,
-    /find all.*/i,
-    /get all.*/i,
-    /contacts with.*/i,
-    /people from.*/i,
-    /companies in.*/i
+    /^create\s+(?!.*task).*list/i,  // create list but NOT create task
+    /^make\s+(?!.*task).*list/i,    // make list but NOT make task
+    /^build\s+(?!.*task).*list/i,   // build list but NOT build task
+    /^generate\s+(?!.*task).*list/i, // generate list but NOT generate task
+    /^list\s+of.*/i,                // list of (at start)
+    /^show\s+me.*/i,                // show me (at start)
+    /^find\s+all.*/i,               // find all (at start)
+    /^get\s+all.*/i,                // get all (at start)
+    /contacts\s+with.*/i,           // contacts with
+    /people\s+from.*/i,             // people from
+    /companies\s+in.*/i             // companies in
   ];
   
   const lowerMessage = message.toLowerCase();
+  
+  // EXCLUDE: If message contains task-related keywords, it's NOT a list creation
+  const taskKeywords = ['task', 'tasks', 'create task', 'add task', 'new task', 'schedule task'];
+  const hasTaskKeyword = taskKeywords.some(keyword => lowerMessage.includes(keyword));
+  
+  if (hasTaskKeyword) {
+    return false;
+  }
   
   // Check for specific patterns first
   if (specificPatterns.some(pattern => pattern.test(message))) {

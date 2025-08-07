@@ -25,6 +25,9 @@ const Listings = () => {
   const [contactActivities, setContactActivities] = useState([]);
   const [contactActivitiesLoading, setContactActivitiesLoading] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [listingTasks, setListingTasks] = useState([]);
+  const [listingTasksLoading, setListingTasksLoading] = useState(false);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [createFields, setCreateFields] = useState({
     streetAddress: '',
     city: '',
@@ -86,6 +89,40 @@ const Listings = () => {
       }
     };
     fetchContactLists();
+  }, [modalOpen, selectedListing, editMode]);
+
+  useEffect(() => {
+    // Fetch tasks for the selected listing when modal opens
+    const fetchListingTasks = async () => {
+      if (!modalOpen || !selectedListing || editMode) {
+        setListingTasks([]);
+        return;
+      }
+      
+      setListingTasksLoading(true);
+      try {
+        console.log('Fetching tasks for listing:', selectedListing.id);
+        
+        // Query tasks collection for tasks linked to this listing
+        const tasksRef = collection(db, 'tasks');
+        const tasksQuery = query(tasksRef, where('listingId', '==', selectedListing.id));
+        const tasksSnapshot = await getDocs(tasksQuery);
+        
+        const tasks = tasksSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        console.log('Listing tasks found:', tasks.length);
+        setListingTasks(tasks);
+      } catch (err) {
+        console.error('Error fetching listing tasks:', err);
+        setListingTasks([]);
+      } finally {
+        setListingTasksLoading(false);
+      }
+    };
+    fetchListingTasks();
   }, [modalOpen, selectedListing, editMode]);
 
   useEffect(() => {
@@ -440,6 +477,48 @@ const Listings = () => {
                     </ul>
                   )}
                 </div>
+                <div style={styles.tasksSection}>
+                  <div style={styles.tasksTitle}>
+                    Tasks
+                    <button
+                      style={styles.addTaskButton}
+                      onClick={() => setShowAddTaskModal(true)}
+                    >
+                      Add Task
+                    </button>
+                  </div>
+                  {listingTasksLoading ? (
+                    <div style={styles.tasksLoading}>Loading tasks...</div>
+                  ) : listingTasks.length === 0 ? (
+                    <div style={styles.tasksEmpty}>No tasks for this listing.</div>
+                  ) : (
+                    <ul style={styles.tasksList}>
+                      {listingTasks.map(task => (
+                        <li key={task.id} style={styles.taskItem}>
+                          <div style={styles.taskHeader}>
+                            <span style={styles.taskTitle}>
+                              {task.title}
+                            </span>
+                            <span style={{
+                              ...styles.taskStatus,
+                              backgroundColor: task.status === 'completed' ? '#44aa44' : 
+                                             task.status === 'in_progress' ? '#ffaa00' : '#666',
+                              color: '#fff'
+                            }}>
+                              {task.status.replace('_', ' ')}
+                            </span>
+                          </div>
+                          <div style={styles.taskDescription}>
+                            {task.description || 'No description'}
+                          </div>
+                          <div style={styles.taskDueDate}>
+                            Due: {task.dueDate}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
                 <div style={styles.activitiesSection}>
                   <div style={styles.activitiesTitle}>Listing Activities</div>
                   {activitiesLoading ? (
@@ -532,6 +611,35 @@ const Listings = () => {
         contact={selectedContact}
         mode="view"
       />
+      {showAddTaskModal && (
+        <AddTaskModal
+          listing={selectedListing}
+          onClose={() => setShowAddTaskModal(false)}
+          onTaskCreated={() => {
+            setShowAddTaskModal(false);
+            // Refresh tasks after creation
+            const fetchListingTasks = async () => {
+              if (!modalOpen || !selectedListing || editMode) return;
+              setListingTasksLoading(true);
+              try {
+                const tasksRef = collection(db, 'tasks');
+                const tasksQuery = query(tasksRef, where('listingId', '==', selectedListing.id));
+                const tasksSnapshot = await getDocs(tasksQuery);
+                const tasks = tasksSnapshot.docs.map(doc => ({
+                  id: doc.id,
+                  ...doc.data()
+                }));
+                setListingTasks(tasks);
+              } catch (err) {
+                console.error('Error fetching listing tasks:', err);
+              } finally {
+                setListingTasksLoading(false);
+              }
+            };
+            fetchListingTasks();
+          }}
+        />
+      )}
       {createModalOpen && (
         <div style={styles.modalOverlay} onClick={closeCreateModal}>
           <div style={styles.modal} onClick={e => e.stopPropagation()}>
@@ -828,22 +936,106 @@ const styles = {
     fontWeight: 500,
     color: '#fff',
   },
-  contactListButton: {
-    background: '#222',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '10px',
-    padding: '10px 22px',
-    cursor: 'pointer',
-    textAlign: 'center',
-    width: '100%',
-    fontSize: '1.1rem',
-    fontWeight: 600,
-    fontFamily: 'Georgia, serif',
-    transition: 'background 0.2s',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
-    marginBottom: '8px',
-  },
+      contactListButton: {
+      background: '#222',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '10px',
+      padding: '10px 22px',
+      cursor: 'pointer',
+      textAlign: 'center',
+      width: '100%',
+      fontSize: '1.1rem',
+      fontWeight: 600,
+      fontFamily: 'Georgia, serif',
+      transition: 'background 0.2s',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+      marginBottom: '8px',
+    },
+    tasksSection: {
+      marginTop: 20,
+      maxHeight: '300px',
+      overflowY: 'auto',
+      borderTop: '2px solid #e0e0e0',
+      paddingTop: 15,
+    },
+    tasksTitle: {
+      fontSize: '1.3rem',
+      fontWeight: 600,
+      marginBottom: 12,
+      color: '#222',
+      borderBottom: '1px solid #ddd',
+      paddingBottom: 8,
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+    },
+    addTaskButton: {
+      background: '#222',
+      color: '#fff',
+      border: 'none',
+      borderRadius: '6px',
+      padding: '4px 12px',
+      fontSize: '0.8rem',
+      fontWeight: 500,
+      cursor: 'pointer',
+      fontFamily: 'Georgia, serif',
+      transition: 'background 0.2s',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    },
+    tasksLoading: {
+      color: '#222',
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      textAlign: 'center',
+    },
+    tasksEmpty: {
+      color: '#222',
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      textAlign: 'center',
+      fontStyle: 'italic',
+    },
+    tasksList: {
+      listStyle: 'none',
+      padding: 0,
+      margin: 0,
+    },
+    taskItem: {
+      background: 'rgba(255,255,255,0.7)',
+      border: '1px solid #ddd',
+      borderRadius: '8px',
+      padding: '12px',
+      marginBottom: '8px',
+      fontFamily: 'Georgia, serif',
+    },
+    taskHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: '8px',
+    },
+    taskTitle: {
+      fontWeight: 600,
+      color: '#222',
+      fontSize: '1rem',
+    },
+    taskStatus: {
+      padding: '4px 8px',
+      borderRadius: '4px',
+      fontSize: '0.8rem',
+      fontWeight: 500,
+    },
+    taskDescription: {
+      color: '#666',
+      fontSize: '0.9rem',
+      marginBottom: '6px',
+    },
+    taskDueDate: {
+      color: '#888',
+      fontSize: '0.8rem',
+      fontStyle: 'italic',
+    },
   contactPanelOverlay: {
     position: 'fixed',
     top: 0,
@@ -1107,6 +1299,237 @@ const styles = {
     fontSize: '0.9rem',
     color: '#666',
     fontStyle: 'italic',
+  },
+};
+
+// AddTaskModal component for listings
+const AddTaskModal = ({ listing, onClose, onTaskCreated }) => {
+  const [taskData, setTaskData] = useState({
+    title: `Task for ${listing?.streetAddress || 'Listing'}`,
+    description: '',
+    dueDate: new Date().toISOString().split('T')[0],
+    priority: 'medium',
+    listingId: listing?.id || null,
+    contactId: null,
+    prospectId: null,
+    prospectBusinessId: null
+  });
+
+  const handleSubmit = async () => {
+    try {
+      const taskDataToSave = {
+        ...taskData,
+        status: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+      
+      await addDoc(collection(db, 'tasks'), taskDataToSave);
+      alert('Task created successfully!');
+      onTaskCreated();
+    } catch (error) {
+      console.error('Error creating task:', error);
+      alert('Failed to create task: ' + error.message);
+    }
+  };
+
+  const handleChange = (field, value) => {
+    setTaskData(prev => ({ ...prev, [field]: value }));
+  };
+
+  if (!listing) return null;
+
+  return (
+    <div style={addTaskModalStyles.overlay}>
+      <div style={addTaskModalStyles.modal}>
+        <button style={addTaskModalStyles.closeButton} onClick={onClose}>&times;</button>
+        <h2 style={addTaskModalStyles.title}>Add Task for {listing.streetAddress}</h2>
+        
+        <div style={addTaskModalStyles.content}>
+          <div style={addTaskModalStyles.fieldRow}>
+            <label style={addTaskModalStyles.label}>Task Title</label>
+            <input
+              type="text"
+              value={taskData.title}
+              onChange={(e) => handleChange('title', e.target.value)}
+              style={addTaskModalStyles.input}
+            />
+          </div>
+
+          <div style={addTaskModalStyles.fieldRow}>
+            <label style={addTaskModalStyles.label}>Description</label>
+            <textarea
+              value={taskData.description}
+              onChange={(e) => handleChange('description', e.target.value)}
+              style={addTaskModalStyles.textarea}
+              rows={4}
+            />
+          </div>
+
+          <div style={addTaskModalStyles.fieldRow}>
+            <label style={addTaskModalStyles.label}>Due Date</label>
+            <input
+              type="date"
+              value={taskData.dueDate}
+              onChange={(e) => handleChange('dueDate', e.target.value)}
+              style={addTaskModalStyles.input}
+            />
+          </div>
+
+          <div style={addTaskModalStyles.fieldRow}>
+            <label style={addTaskModalStyles.label}>Priority</label>
+            <select
+              value={taskData.priority}
+              onChange={(e) => handleChange('priority', e.target.value)}
+              style={addTaskModalStyles.input}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={addTaskModalStyles.actions}>
+          <button onClick={onClose} style={addTaskModalStyles.cancelButton}>Cancel</button>
+          <button onClick={handleSubmit} style={addTaskModalStyles.saveButton}>Create Task</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Styles for AddTaskModal
+const addTaskModalStyles = {
+  overlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 7000,
+  },
+  modal: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    backdropFilter: 'blur(16px)',
+    WebkitBackdropFilter: 'blur(16px)',
+    borderRadius: '18px',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+    padding: '36px 48px 32px 48px',
+    minWidth: '500px',
+    maxWidth: '700px',
+    width: '90vw',
+    minHeight: '200px',
+    maxHeight: '95vh',
+    position: 'relative',
+    fontFamily: 'Georgia, serif',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: '14px',
+    right: '20px',
+    background: '#222',
+    border: 'none',
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    fontSize: '1.7rem',
+    color: '#fff',
+    cursor: 'pointer',
+    zIndex: 10,
+    transition: 'background 0.2s',
+    lineHeight: 1,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
+  },
+  title: {
+    fontSize: '1.45rem',
+    fontWeight: 700,
+    margin: '0 0 18px 0',
+    color: '#23233a',
+    letterSpacing: '0.01em',
+    textAlign: 'center',
+  },
+  content: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px',
+  },
+  fieldRow: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px',
+  },
+  label: {
+    fontWeight: 500,
+    color: '#444',
+    fontSize: '0.95rem',
+  },
+  input: {
+    width: '100%',
+    padding: '8px 12px',
+    border: '1px solid #ddd',
+    borderRadius: '6px',
+    fontSize: '1rem',
+    fontFamily: 'Georgia, serif',
+    background: 'rgba(255,255,255,0.8)',
+    outline: 'none',
+    transition: 'border 0.2s',
+  },
+  textarea: {
+    width: '100%',
+    padding: '8px 12px',
+    border: '1px solid #ddd',
+    borderRadius: '6px',
+    fontSize: '1rem',
+    fontFamily: 'Georgia, serif',
+    background: 'rgba(255,255,255,0.8)',
+    outline: 'none',
+    transition: 'border 0.2s',
+    resize: 'vertical',
+    minHeight: '80px',
+  },
+  actions: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginTop: 25,
+    gap: '12px',
+  },
+  cancelButton: {
+    backgroundColor: 'rgba(0,0,0,0.08)',
+    color: '#222',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '10px 20px',
+    fontSize: '1rem',
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+    transition: 'background 0.2s',
+    flex: 1,
+  },
+  saveButton: {
+    backgroundColor: '#222',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '10px 20px',
+    fontSize: '1rem',
+    fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'Georgia, serif',
+    transition: 'background 0.2s',
+    flex: 1,
   },
 };
 
