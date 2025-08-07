@@ -1111,7 +1111,10 @@ const AddTaskModal = ({ business, onClose }) => {
     title: `Prospect ${business.name}`,
     description: `Website: ${business.website || 'N/A'}\nPhone: ${business.phone || 'N/A'}`,
     dueDate: new Date().toISOString().split('T')[0],
-    priority: 'medium'
+    priority: 'medium',
+    contactId: null,
+    prospectId: selectedSearch?.id || null,
+    prospectBusinessId: business.place_id || null
   });
 
   const handleSubmit = async () => {

@@ -10,11 +10,17 @@ const Tasks = () => {
   const [loading, setLoading] = useState(true);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showWeeklyView, setShowWeeklyView] = useState(false);
+  const [showTaskDetails, setShowTaskDetails] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [editingTask, setEditingTask] = useState(null);
   const [newTask, setNewTask] = useState({
     title: '',
     description: '',
     dueDate: new Date().toISOString().split('T')[0],
-    priority: 'medium'
+    priority: 'medium',
+    contactId: null,
+    prospectId: null,
+    prospectBusinessId: null
   });
 
   // Load tasks from Firestore on component mount
@@ -66,7 +72,10 @@ const Tasks = () => {
           title: '',
           description: '',
           dueDate: new Date().toISOString().split('T')[0],
-          priority: 'medium'
+          priority: 'medium',
+          contactId: null,
+          prospectId: null,
+          prospectBusinessId: null
         });
         setShowAddTask(false);
       } catch (error) {
@@ -85,12 +94,93 @@ const Tasks = () => {
     }
   };
 
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'completed': return '#44aa44';
+      case 'in_progress': return '#ffaa00';
+      case 'pending': return '#666';
+      default: return '#666';
+    }
+  };
+
+  const handleTaskClick = (task) => {
+    setSelectedTask(task);
+    setEditingTask({ ...task });
+    setShowTaskDetails(true);
+  };
+
+  const handleUpdateTask = async () => {
+    if (!editingTask || !editingTask.title.trim()) return;
+    
+    try {
+      const taskRef = doc(db, 'tasks', editingTask.id);
+      await updateDoc(taskRef, {
+        ...editingTask,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Update local state
+      setTasks(tasks.map(task => 
+        task.id === editingTask.id ? { ...task, ...editingTask } : task
+      ));
+      
+      setShowTaskDetails(false);
+      setSelectedTask(null);
+      setEditingTask(null);
+    } catch (error) {
+      console.error('Error updating task:', error);
+      alert('Failed to update task: ' + error.message);
+    }
+  };
+
+  const handleStatusChange = async (taskId, newStatus) => {
+    try {
+      const taskRef = doc(db, 'tasks', taskId);
+      await updateDoc(taskRef, {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Update local state
+      setTasks(tasks.map(task => 
+        task.id === taskId ? { ...task, status: newStatus } : task
+      ));
+      
+      // Update editing task if it's the same one
+      if (editingTask && editingTask.id === taskId) {
+        setEditingTask({ ...editingTask, status: newStatus });
+      }
+    } catch (error) {
+      console.error('Error updating task status:', error);
+      alert('Failed to update task status: ' + error.message);
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'tasks', taskId));
+      
+      // Update local state
+      setTasks(tasks.filter(task => task.id !== taskId));
+      
+      setShowTaskDetails(false);
+      setSelectedTask(null);
+      setEditingTask(null);
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      alert('Failed to delete task: ' + error.message);
+    }
+  };
+
   const getTasksForDate = (date) => {
-    return tasks.filter(task => isSameDay(new Date(task.dueDate), date));
+    const dateString = date.toISOString().split('T')[0];
+    return tasks.filter(task => task.dueDate === dateString);
   };
 
   const getWeeklyData = () => {
-    const currentDate = new Date('2025-08-06'); // Wednesday August 6th, 2025
+    const currentDate = new Date(); // Use actual current date
     const start = startOfWeek(currentDate, { weekStartsOn: 0 }); // Sunday as first day
     const end = endOfWeek(currentDate, { weekStartsOn: 0 }); // Sunday as first day
     const weekDays = eachDayOfInterval({ start, end });
@@ -102,7 +192,7 @@ const Tasks = () => {
   };
 
   const getTodaysTasks = () => {
-    const today = new Date('2025-08-06'); // Wednesday August 6th, 2025
+    const today = new Date(); // Use actual current date
     return getTasksForDate(today);
   };
 
@@ -125,19 +215,19 @@ const Tasks = () => {
           onClick={() => setShowWeeklyView(true)}
           style={styles.weeklyButton}
         >
-          📅 Weekly View
+          Weekly View
         </button>
         <button
           onClick={() => setShowAddTask(true)}
           style={styles.addButton}
         >
-          + Add Task
+          Add Task
         </button>
       </div>
 
       {/* Today's Tasks */}
       <div style={styles.todaysContainer}>
-        <h2 style={styles.todaysTitle}>Today's Tasks - Wednesday, August 6th</h2>
+        <h2 style={styles.todaysTitle}>Today's Tasks - {format(new Date(), 'EEEE, MMMM do')}</h2>
         {loading ? (
           <p style={styles.loadingText}>Loading tasks...</p>
         ) : getTodaysTasks().length === 0 ? (
@@ -145,17 +235,38 @@ const Tasks = () => {
         ) : (
           <div style={styles.taskList}>
             {getTodaysTasks().map(task => (
-              <div key={task.id} style={styles.taskCard}>
+              <div 
+                key={task.id} 
+                style={{
+                  ...styles.taskCard,
+                  cursor: 'pointer',
+                  borderLeft: `4px solid ${getStatusColor(task.status)}`
+                }}
+                onClick={() => handleTaskClick(task)}
+                onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
+                onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+              >
                 <div style={styles.taskHeader}>
                   <h3 style={styles.taskTitle}>{task.title}</h3>
-                  <span style={{
-                    ...styles.priorityBadge,
-                    backgroundColor: getPriorityColor(task.priority)
-                  }}>
-                    {task.priority}
-                  </span>
+                  <div style={styles.taskBadges}>
+                    <span style={{
+                      ...styles.priorityBadge,
+                      backgroundColor: getPriorityColor(task.priority)
+                    }}>
+                      {task.priority}
+                    </span>
+                    <span style={{
+                      ...styles.statusBadge,
+                      backgroundColor: getStatusColor(task.status)
+                    }}>
+                      {task.status.replace('_', ' ')}
+                    </span>
+                  </div>
                 </div>
                 <p style={styles.taskDescription}>{task.description}</p>
+                <div style={styles.taskMeta}>
+                  <span style={styles.taskDate}>Due: {task.dueDate}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -231,7 +342,7 @@ const Tasks = () => {
       {showWeeklyView && (
         <div style={styles.modalOverlay}>
           <div style={styles.weeklyModal}>
-            <h3 style={styles.modalTitle}>Weekly View - August 3-9, 2025</h3>
+            <h3 style={styles.modalTitle}>Weekly View - {format(startOfWeek(new Date(), { weekStartsOn: 0 }), 'MMM d')} - {format(endOfWeek(new Date(), { weekStartsOn: 0 }), 'MMM d, yyyy')}</h3>
             <div style={styles.weeklyGrid}>
               {getWeeklyData().map(({ date, tasks }) => (
                 <div key={date.toISOString()} style={styles.weeklyDay}>
@@ -245,10 +356,17 @@ const Tasks = () => {
                       <p style={styles.noTasksDay}>No tasks</p>
                     ) : (
                       tasks.map(task => (
-                        <div key={task.id} style={{
-                          ...styles.weeklyTask,
-                          borderLeftColor: getPriorityColor(task.priority)
-                        }}>
+                        <div 
+                          key={task.id} 
+                          style={{
+                            ...styles.weeklyTask,
+                            borderLeftColor: getPriorityColor(task.priority),
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => handleTaskClick(task)}
+                          onMouseEnter={(e) => e.target.style.transform = 'translateY(-1px)'}
+                          onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+                        >
                           <div style={styles.weeklyTaskTitle}>{task.title}</div>
                           <div style={styles.weeklyTaskPriority}>
                             {task.priority}
@@ -266,6 +384,96 @@ const Tasks = () => {
                 style={styles.closeButton}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Details Modal */}
+      {showTaskDetails && selectedTask && editingTask && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <h3 style={styles.modalTitle}>Task Details</h3>
+            
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Title</label>
+              <input
+                type="text"
+                value={editingTask.title}
+                onChange={(e) => setEditingTask({...editingTask, title: e.target.value})}
+                style={styles.input}
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Description</label>
+              <textarea
+                value={editingTask.description}
+                onChange={(e) => setEditingTask({...editingTask, description: e.target.value})}
+                style={styles.textarea}
+                rows={4}
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Due Date</label>
+              <input
+                type="date"
+                value={editingTask.dueDate}
+                onChange={(e) => setEditingTask({...editingTask, dueDate: e.target.value})}
+                style={styles.input}
+              />
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Priority</label>
+              <select
+                value={editingTask.priority}
+                onChange={(e) => setEditingTask({...editingTask, priority: e.target.value})}
+                style={styles.select}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+
+            <div style={styles.formGroup}>
+              <label style={styles.label}>Status</label>
+              <select
+                value={editingTask.status}
+                onChange={(e) => setEditingTask({...editingTask, status: e.target.value})}
+                style={styles.select}
+              >
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+
+            <div style={styles.modalActions}>
+              <button
+                onClick={() => handleDeleteTask(editingTask.id)}
+                style={styles.deleteButton}
+              >
+                Delete Task
+              </button>
+              <button
+                onClick={() => {
+                  setShowTaskDetails(false);
+                  setSelectedTask(null);
+                  setEditingTask(null);
+                }}
+                style={styles.cancelButton}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateTask}
+                style={styles.saveButton}
+              >
+                Update Task
               </button>
             </div>
           </div>
@@ -320,9 +528,9 @@ const styles = {
     marginBottom: '30px',
   },
   weeklyButton: {
-    background: '#fff',
-    color: '#333',
-    border: '1px solid #ddd',
+    background: '#111',
+    color: '#fff',
+    border: 'none',
     borderRadius: 8,
     padding: '12px 24px',
     fontSize: 14,
@@ -348,7 +556,6 @@ const styles = {
     borderRadius: '16px',
     boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
     padding: '30px',
-    border: '2px solid #44aa44',
   },
   todaysTitle: {
     fontSize: '1.5rem',
@@ -570,6 +777,38 @@ const styles = {
     border: 'none',
     borderRadius: '8px',
     padding: '12px 24px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  taskBadges: {
+    display: 'flex',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  statusBadge: {
+    padding: '4px 8px',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#fff',
+    textTransform: 'uppercase',
+  },
+  taskMeta: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: '10px',
+    paddingTop: '10px',
+    borderTop: '1px solid #eee',
+  },
+  deleteButton: {
+    backgroundColor: '#111',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '10px 20px',
     fontSize: '14px',
     fontWeight: '600',
     cursor: 'pointer',

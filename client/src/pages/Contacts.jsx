@@ -34,6 +34,8 @@ const Contacts = () => {
 
   const [activityModalOpen, setActivityModalOpen] = useState(false);
   const [activityModalContact, setActivityModalContact] = useState(null);
+  const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+  const [selectedContactForTask, setSelectedContactForTask] = useState(null);
 
   const [listSelectionMode, setListSelectionMode] = useState(false);
   const [selectedContactIds, setSelectedContactIds] = useState([]);
@@ -268,6 +270,11 @@ const Contacts = () => {
       // This will trigger a refresh of the activities in the contact modal
       setModalContact({ ...modalContact });
     }
+  };
+
+  const handleAddTask = (contact) => {
+    setSelectedContactForTask(contact);
+    setShowAddTaskModal(true);
   };
 
   const handleSaveList = async ({ name, contactIds, connectToListing, selectedListing }) => {
@@ -568,6 +575,7 @@ const Contacts = () => {
                         <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleOpenModal(contact, 'edit'); }}>Edit</button>
                         <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleOpenModal(contact, 'view'); }}>Details</button>
                         <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleOpenActivityModal(contact); }}>Add Activity</button>
+                        <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleAddTask(contact); }}>Add Task</button>
                       </div>
                     </div>
                   );
@@ -597,6 +605,15 @@ const Contacts = () => {
         onClose={handleCloseActivityModal}
         onActivityAdded={handleActivityAdded}
       />
+      {showAddTaskModal && (
+        <AddTaskModal
+          contact={selectedContactForTask}
+          onClose={() => {
+            setShowAddTaskModal(false);
+            setSelectedContactForTask(null);
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -1060,6 +1077,104 @@ const styles = {
       cursor: 'not-allowed',
     },
   },
+  // Modal styles for AddTaskModal
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+  },
+  modal: {
+    backgroundColor: '#fff',
+    borderRadius: '16px',
+    padding: '30px',
+    width: '90%',
+    maxWidth: '500px',
+    boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2)',
+    position: 'relative',
+  },
+  modalTitle: {
+    fontSize: '1.5rem',
+    fontWeight: '600',
+    color: '#2c2c2c',
+    marginBottom: '20px',
+    textAlign: 'center',
+  },
+  modalContent: {
+    marginBottom: '20px',
+  },
+  modalFieldRow: {
+    marginBottom: '20px',
+  },
+  modalLabel: {
+    display: 'block',
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#2c2c2c',
+    marginBottom: '8px',
+  },
+  modalInput: {
+    width: '100%',
+    padding: '12px',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontFamily: 'Georgia, serif',
+  },
+  modalTextarea: {
+    width: '100%',
+    padding: '12px',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    fontSize: '14px',
+    fontFamily: 'Georgia, serif',
+    minHeight: '80px',
+    resize: 'vertical',
+  },
+  modalActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '10px',
+    marginTop: '30px',
+  },
+  modalCancelButton: {
+    background: '#f5f5f5',
+    color: '#333',
+    border: '1px solid #ddd',
+    borderRadius: '8px',
+    padding: '12px 24px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  modalSaveButton: {
+    background: '#111',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '12px 24px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  modalCloseButton: {
+    position: 'absolute',
+    top: '15px',
+    right: '20px',
+    background: 'none',
+    border: 'none',
+    fontSize: '24px',
+    cursor: 'pointer',
+    color: '#666',
+  },
 };
 
 // Add hover effects and animations
@@ -1091,5 +1206,110 @@ styleSheet.textContent = `
   }
 `;
 document.head.appendChild(styleSheet);
+
+const AddTaskModal = ({ contact, onClose }) => {
+  const [taskData, setTaskData] = useState({
+    title: `Task for ${contact?.firstName || ''} ${contact?.lastName || ''}`,
+    description: '',
+    dueDate: new Date().toISOString().split('T')[0],
+    priority: 'medium',
+    contactId: contact?.id || null,
+    prospectId: null,
+    prospectBusinessId: null
+  });
+
+  const handleSubmit = async () => {
+    try {
+      const taskDataToSave = {
+        ...taskData,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      
+      await addDoc(collection(db, 'tasks'), taskDataToSave);
+      alert('Task created successfully!');
+      onClose();
+    } catch (error) {
+      console.error('Error creating task:', error);
+      alert('Failed to create task: ' + error.message);
+    }
+  };
+
+  const handleChange = (field, value) => {
+    setTaskData(prev => ({ ...prev, [field]: value }));
+  };
+
+  if (!contact) return null;
+
+  return (
+    <div style={styles.modalOverlay}>
+      <div style={styles.modal}>
+        <button style={styles.modalCloseButton} onClick={onClose}>&times;</button>
+        <h2 style={styles.modalTitle}>Add Task for {contact.firstName} {contact.lastName}</h2>
+        
+        <div style={styles.modalContent}>
+          <div style={styles.modalFieldRow}>
+            <label style={styles.modalLabel}>Task Title</label>
+            <input
+              type="text"
+              value={taskData.title}
+              onChange={(e) => handleChange('title', e.target.value)}
+              style={styles.modalInput}
+            />
+          </div>
+
+          <div style={styles.modalFieldRow}>
+            <label style={styles.modalLabel}>Description</label>
+            <textarea
+              value={taskData.description}
+              onChange={(e) => handleChange('description', e.target.value)}
+              style={styles.modalTextarea}
+              rows={4}
+            />
+          </div>
+
+          <div style={styles.modalFieldRow}>
+            <label style={styles.modalLabel}>Due Date</label>
+            <input
+              type="date"
+              value={taskData.dueDate}
+              onChange={(e) => handleChange('dueDate', e.target.value)}
+              style={styles.modalInput}
+            />
+          </div>
+
+          <div style={styles.modalFieldRow}>
+            <label style={styles.modalLabel}>Priority</label>
+            <select
+              value={taskData.priority}
+              onChange={(e) => handleChange('priority', e.target.value)}
+              style={styles.modalInput}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={styles.modalActions}>
+          <button
+            onClick={onClose}
+            style={styles.modalCancelButton}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            style={styles.modalSaveButton}
+          >
+            Create Task
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default Contacts; 

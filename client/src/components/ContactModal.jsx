@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { firebase } from '../firebase';
 import { getContactActivities } from '../services/activitiesService';
+import { collection, query, where, getDocs, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 
 const SECTOR_OPTIONS = [
   '',
@@ -21,6 +23,11 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
   const [editContact, setEditContact] = useState(contact || {});
   const [contactActivities, setContactActivities] = useState([]);
   const [contactActivitiesLoading, setContactActivitiesLoading] = useState(false);
+  const [contactTasks, setContactTasks] = useState([]);
+  const [contactTasksLoading, setContactTasksLoading] = useState(false);
+  const [showTaskDetails, setShowTaskDetails] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [editingTask, setEditingTask] = useState(null);
 
   useEffect(() => {
     setEditContact(contact || {});
@@ -55,8 +62,40 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
     }
   };
 
+  // Fetch tasks for the contact
+  const fetchContactTasks = async () => {
+    if (!open || !contact || mode !== 'view') {
+      setContactTasks([]);
+      return;
+    }
+    
+    setContactTasksLoading(true);
+    try {
+      console.log('Fetching tasks for contact:', contact.id);
+      
+      // Query tasks collection for tasks linked to this contact
+      const tasksRef = collection(db, 'tasks');
+      const tasksQuery = query(tasksRef, where('contactId', '==', contact.id));
+      const tasksSnapshot = await getDocs(tasksQuery);
+      
+      const tasks = tasksSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      console.log('Contact tasks found:', tasks.length);
+      setContactTasks(tasks);
+    } catch (err) {
+      console.error('Error fetching contact tasks:', err);
+      setContactTasks([]);
+    } finally {
+      setContactTasksLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchContactActivities();
+    fetchContactTasks();
   }, [open, contact, mode]);
 
   // Listen for AI activity creation events and refresh activities
@@ -88,6 +127,61 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
 
   const handleSave = () => {
     if (onSave) onSave(editContact);
+  };
+
+  const handleTaskClick = (task) => {
+    setSelectedTask(task);
+    setEditingTask({ ...task });
+    setShowTaskDetails(true);
+  };
+
+  const handleUpdateTask = async () => {
+    if (!editingTask) return;
+    
+    try {
+      const taskRef = doc(db, 'tasks', editingTask.id);
+      await updateDoc(taskRef, {
+        title: editingTask.title,
+        description: editingTask.description,
+        dueDate: editingTask.dueDate,
+        priority: editingTask.priority,
+        status: editingTask.status
+      });
+      
+      // Refresh tasks
+      fetchContactTasks();
+      setShowTaskDetails(false);
+      setSelectedTask(null);
+      setEditingTask(null);
+    } catch (error) {
+      console.error('Error updating task:', error);
+    }
+  };
+
+  const handleStatusChange = async (newStatus) => {
+    if (!editingTask) return;
+    
+    try {
+      const taskRef = doc(db, 'tasks', editingTask.id);
+      await updateDoc(taskRef, { status: newStatus });
+      
+      setEditingTask(prev => ({ ...prev, status: newStatus }));
+      fetchContactTasks();
+    } catch (error) {
+      console.error('Error updating task status:', error);
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    try {
+      await deleteDoc(doc(db, 'tasks', taskId));
+      fetchContactTasks();
+      setShowTaskDetails(false);
+      setSelectedTask(null);
+      setEditingTask(null);
+    } catch (error) {
+      console.error('Error deleting task:', error);
+    }
   };
 
   // Create styles based on current mode
@@ -247,6 +341,270 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
       fontSize: '0.75rem',
       fontFamily: 'Georgia, serif',
     },
+    tasksSection: {
+      marginTop: 20,
+      maxHeight: '300px',
+      overflowY: 'auto',
+      borderTop: '2px solid #e0e0e0',
+      paddingTop: 15,
+    },
+    tasksTitle: {
+      fontSize: '1.3rem',
+      fontWeight: 600,
+      marginBottom: 12,
+      color: '#222',
+      borderBottom: '1px solid #ddd',
+      paddingBottom: 8,
+    },
+    tasksLoading: {
+      color: '#222',
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      textAlign: 'center',
+    },
+    tasksEmpty: {
+      color: '#222',
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      textAlign: 'center',
+    },
+    tasksList: {
+      listStyleType: 'none',
+      padding: 0,
+    },
+    taskItem: {
+      marginBottom: 12,
+      padding: '8px 12px',
+      border: '1px solid #e0e0e0',
+      borderRadius: 6,
+      background: 'rgba(255,255,255,0.8)',
+    },
+    taskHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 4,
+    },
+    taskTitle: {
+      fontWeight: 600,
+      color: '#2c5aa0',
+      fontSize: '0.9rem',
+    },
+    taskStatus: {
+      fontSize: '0.75rem',
+      fontWeight: 600,
+      padding: '2px 6px',
+      borderRadius: '4px',
+      textTransform: 'uppercase',
+    },
+    taskDescription: {
+      color: '#444',
+      fontSize: '0.85rem',
+      fontFamily: 'Georgia, serif',
+      wordBreak: 'break-word',
+      marginBottom: 2,
+    },
+    taskDueDate: {
+      color: '#666',
+      fontSize: '0.75rem',
+      fontFamily: 'Georgia, serif',
+    },
+    taskDetailsOverlay: {
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 6000,
+    },
+    taskDetailsModal: {
+      backgroundColor: 'rgba(255,255,255,0.95)',
+      backdropFilter: 'blur(16px)',
+      borderRadius: '18px',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+      padding: '30px',
+      minWidth: '500px',
+      maxWidth: '600px',
+      width: '90vw',
+      maxHeight: '80vh',
+      overflowY: 'auto',
+      fontFamily: 'Georgia, serif',
+    },
+    taskDetailsTitle: {
+      fontSize: '1.5rem',
+      fontWeight: 600,
+      marginBottom: 20,
+      color: '#222',
+      textAlign: 'center',
+    },
+    taskDetailsField: {
+      marginBottom: 15,
+    },
+    taskDetailsLabel: {
+      fontWeight: 500,
+      color: '#444',
+      fontSize: '1rem',
+      marginBottom: 5,
+    },
+    taskDetailsInput: {
+      width: '100%',
+      padding: '8px 12px',
+      border: '1px solid #ddd',
+      borderRadius: 6,
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      background: 'rgba(255,255,255,0.8)',
+    },
+    taskDetailsTextarea: {
+      width: '100%',
+      padding: '8px 12px',
+      border: '1px solid #ddd',
+      borderRadius: 6,
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      background: 'rgba(255,255,255,0.8)',
+      resize: 'vertical',
+      minHeight: '80px',
+    },
+    taskDetailsSelect: {
+      width: '100%',
+      padding: '8px 12px',
+      border: '1px solid #ddd',
+      borderRadius: 6,
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      background: 'rgba(255,255,255,0.8)',
+    },
+    taskDetailsActions: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      gap: 15,
+      marginTop: 25,
+    },
+    taskDetailsButton: {
+      padding: '10px 20px',
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      cursor: 'pointer',
+      fontWeight: 500,
+      transition: 'background 0.2s',
+      border: 'none',
+      borderRadius: 8,
+    },
+    deleteButton: {
+      backgroundColor: '#111',
+      color: '#fff',
+    },
+    cancelButton: {
+      backgroundColor: 'rgba(0,0,0,0.08)',
+      color: '#222',
+    },
+    saveButton: {
+      backgroundColor: '#222',
+      color: '#fff',
+    },
+    taskDetailsOverlay: {
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 6000,
+    },
+    taskDetailsModal: {
+      backgroundColor: 'rgba(255,255,255,0.95)',
+      backdropFilter: 'blur(16px)',
+      borderRadius: '18px',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+      padding: '30px',
+      minWidth: '500px',
+      maxWidth: '600px',
+      width: '90vw',
+      maxHeight: '80vh',
+      overflowY: 'auto',
+      fontFamily: 'Georgia, serif',
+    },
+    taskDetailsTitle: {
+      fontSize: '1.5rem',
+      fontWeight: 600,
+      marginBottom: 20,
+      color: '#222',
+      textAlign: 'center',
+    },
+    taskDetailsField: {
+      marginBottom: 15,
+    },
+    taskDetailsLabel: {
+      fontWeight: 500,
+      color: '#444',
+      fontSize: '1rem',
+      marginBottom: 5,
+    },
+    taskDetailsInput: {
+      width: '100%',
+      padding: '8px 12px',
+      border: '1px solid #ddd',
+      borderRadius: 6,
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      background: 'rgba(255,255,255,0.8)',
+    },
+    taskDetailsTextarea: {
+      width: '100%',
+      padding: '8px 12px',
+      border: '1px solid #ddd',
+      borderRadius: 6,
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      background: 'rgba(255,255,255,0.8)',
+      resize: 'vertical',
+      minHeight: '80px',
+    },
+    taskDetailsSelect: {
+      width: '100%',
+      padding: '8px 12px',
+      border: '1px solid #ddd',
+      borderRadius: 6,
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      background: 'rgba(255,255,255,0.8)',
+    },
+    taskDetailsActions: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      gap: 15,
+      marginTop: 25,
+    },
+    taskDetailsButton: {
+      padding: '10px 20px',
+      fontSize: '1rem',
+      fontFamily: 'Georgia, serif',
+      cursor: 'pointer',
+      fontWeight: 500,
+      transition: 'background 0.2s',
+      border: 'none',
+      borderRadius: 8,
+    },
+    deleteButton: {
+      backgroundColor: '#111',
+      color: '#fff',
+    },
+    cancelButton: {
+      backgroundColor: 'rgba(0,0,0,0.08)',
+      color: '#222',
+    },
+    updateButton: {
+      backgroundColor: '#222',
+      color: '#fff',
+    },
     notesTextarea: {
       height: currentMode === 'edit' ? '60px' : '300px',
       resize: 'vertical',
@@ -276,7 +634,8 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
 
   return (
     open && (
-      <div style={styles.overlay}>
+      <>
+        <div style={styles.overlay}>
         <div
           style={{
             ...styles.modal,
@@ -394,6 +753,53 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
                 </div>
               )}
             </div>
+            {/* Tasks - only show in view mode */}
+            {mode === 'view' && (
+              <div style={styles.tasksSection}>
+                <div style={styles.tasksTitle}>Tasks</div>
+                {contactTasksLoading ? (
+                  <div style={styles.tasksLoading}>Loading tasks...</div>
+                ) : contactTasks.length === 0 ? (
+                  <div style={styles.tasksEmpty}>No tasks for this contact.</div>
+                ) : (
+                  <ul style={styles.tasksList}>
+                    {contactTasks.map(task => (
+                      <li 
+                        key={task.id} 
+                        style={{
+                          ...styles.taskItem,
+                          cursor: 'pointer',
+                          transition: 'transform 0.2s ease'
+                        }}
+                        onClick={() => handleTaskClick(task)}
+                        onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
+                        onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+                      >
+                        <div style={styles.taskHeader}>
+                          <span style={styles.taskTitle}>
+                            {task.title}
+                          </span>
+                          <span style={{
+                            ...styles.taskStatus,
+                            backgroundColor: task.status === 'completed' ? '#44aa44' : 
+                                           task.status === 'in_progress' ? '#ffaa00' : '#666',
+                            color: '#fff'
+                          }}>
+                            {task.status.replace('_', ' ')}
+                          </span>
+                        </div>
+                        <div style={styles.taskDescription}>
+                          {task.description || 'No description'}
+                        </div>
+                        <div style={styles.taskDueDate}>
+                          Due: {task.dueDate}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
             {/* Activities - only show in view mode */}
             {mode === 'view' && (
               <div style={styles.activitiesSection}>
@@ -443,6 +849,91 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
           )}
         </div>
       </div>
+      
+      {/* Task Details Modal */}
+      {showTaskDetails && selectedTask && editingTask && (
+        <div style={styles.taskDetailsOverlay}>
+          <div style={styles.taskDetailsModal}>
+            <h2 style={styles.taskDetailsTitle}>Task Details</h2>
+            
+            <div style={styles.taskDetailsField}>
+              <label style={styles.taskDetailsLabel}>Title:</label>
+              <input
+                style={styles.taskDetailsInput}
+                value={editingTask.title || ''}
+                onChange={(e) => setEditingTask(prev => ({ ...prev, title: e.target.value }))}
+              />
+            </div>
+            
+            <div style={styles.taskDetailsField}>
+              <label style={styles.taskDetailsLabel}>Description:</label>
+              <textarea
+                style={styles.taskDetailsTextarea}
+                value={editingTask.description || ''}
+                onChange={(e) => setEditingTask(prev => ({ ...prev, description: e.target.value }))}
+              />
+            </div>
+            
+            <div style={styles.taskDetailsField}>
+              <label style={styles.taskDetailsLabel}>Due Date:</label>
+              <input
+                type="date"
+                style={styles.taskDetailsInput}
+                value={editingTask.dueDate || ''}
+                onChange={(e) => setEditingTask(prev => ({ ...prev, dueDate: e.target.value }))}
+              />
+            </div>
+            
+            <div style={styles.taskDetailsField}>
+              <label style={styles.taskDetailsLabel}>Priority:</label>
+              <select
+                style={styles.taskDetailsSelect}
+                value={editingTask.priority || 'medium'}
+                onChange={(e) => setEditingTask(prev => ({ ...prev, priority: e.target.value }))}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            
+            <div style={styles.taskDetailsField}>
+              <label style={styles.taskDetailsLabel}>Status:</label>
+              <select
+                style={styles.taskDetailsSelect}
+                value={editingTask.status || 'pending'}
+                onChange={(e) => handleStatusChange(e.target.value)}
+              >
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+            
+            <div style={styles.taskDetailsActions}>
+              <button 
+                onClick={() => handleDeleteTask(editingTask.id)} 
+                style={{ ...styles.taskDetailsButton, ...styles.deleteButton }}
+              >
+                Delete Task
+              </button>
+              <button 
+                onClick={() => { setShowTaskDetails(false); setSelectedTask(null); setEditingTask(null); }} 
+                style={{ ...styles.taskDetailsButton, ...styles.cancelButton }}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleUpdateTask} 
+                style={{ ...styles.taskDetailsButton, ...styles.updateButton }}
+              >
+                Update Task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </>
     )
   );
 };
