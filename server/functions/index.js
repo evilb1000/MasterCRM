@@ -190,6 +190,7 @@ Available actions:
 - COMBINED_LIST_CREATION_AND_ATTACHMENT: User wants to create a contact list with criteria and then attach it to a listing in one command
 - COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT: User wants to create an activity for a contact AND attach it to a listing in one command
 - PROSPECT_BUSINESSES: User wants to find businesses in a specific location and category (find businesses, prospect, search for companies, locate businesses)
+- FILTER_CONTACTS_BY_LOCATION: User wants to find contacts within a specific geographic area (find contacts in [location], get [location] contacts, contacts near [location])
 - GENERAL_QUERY: User is asking a general question about the CRM system
 
 **CRITICAL: Use COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT when a listing is mentioned in the activity. Use CREATE_ACTIVITY only when NO listing is mentioned.**
@@ -246,6 +247,26 @@ IMPORTANT: For PROSPECT_BUSINESSES, look for these patterns:
 - "Search [location] for [businessCategory]"
 - "Get [businessCategory] prospects in [location]"
 - "Find companies in [location] that do [businessCategory]"
+
+IMPORTANT: For FILTER_CONTACTS_BY_LOCATION, look for these patterns:
+- "find all my [location] contacts"
+- "find contacts in [location]"
+- "get [location] contacts"
+- "contacts in [location]"
+- "find my [location] contacts"
+- "show me [location] contacts"
+- "contacts near [location]"
+- "find contacts near [location]"
+- "get contacts from [location]"
+- "find all contacts in [location]"
+- "find all my [location] contacts who are [businessSector]"
+- "find [businessSector] contacts in [location]"
+- "find my [businessSector] contacts around [location]"
+- "find contacts in [location] who are [businessSector]"
+- "get [businessSector] contacts from [location]"
+- "find all [businessSector] contacts near [location]"
+- "show me [businessSector] contacts in [location]"
+- "contacts in [location] who are [businessSector]"
 
 CRITICAL: FILTER_CONTACTS vs CREATE_LIST DISTINCTION
 
@@ -312,7 +333,9 @@ You are an intelligent CRM assistant that understands the context and intent of 
     "listIdentifier": "name of the list to attach (if attaching list to listing)",
     "listingIdentifier": "name or address of the listing to attach to (if attaching list to listing)",
     "businessCategory": "type of business to search for (if prospecting businesses)",
-    "location": "location to search in (if prospecting businesses)",
+    "location": "location to search in (if prospecting businesses or location-based contact filtering)",
+    "businessSector": "business sector to filter by (if location-based contact filtering)",
+    "radius": "search radius in miles (if location-based contact filtering, default 2)",
     "filterCriteria": "the criteria to filter contacts by (if filtering contacts)",
     "filterField": "businessSector|company|address (the field to search in)"
   },
@@ -346,6 +369,13 @@ CRITICAL CONTEXT UNDERSTANDING RULES:
    - "find John Smith" → SEARCH_CONTACT (contactIdentifier: "John Smith")
    - "find dentists" → PROSPECT_BUSINESSES (businessCategory: "dentists")
    - "show me contacts with Investor business sector" → FILTER_CONTACTS (filterCriteria: "Investor", filterField: "businessSector")
+
+6. LOCATION-BASED CONTACT FILTERING:
+   - "find all my bridgeville contacts" → FILTER_CONTACTS_BY_LOCATION (location: "bridgeville")
+   - "find contacts in mt. lebanon" → FILTER_CONTACTS_BY_LOCATION (location: "mt. lebanon")
+   - "find all my bridgeville contacts who are investors" → FILTER_CONTACTS_BY_LOCATION (location: "bridgeville", businessSector: "investors")
+   - "find retail contacts around bridgeville" → FILTER_CONTACTS_BY_LOCATION (location: "bridgeville", businessSector: "retail")
+   - "find healthcare contacts in mt. lebanon" → FILTER_CONTACTS_BY_LOCATION (location: "mt. lebanon", businessSector: "healthcare")
 
 Use your contextual understanding to determine the user's intent based on the meaning and context, not just keywords.
 
@@ -487,6 +517,11 @@ Respond with ONLY the JSON object, no other text.`;
         case 'FILTER_CONTACTS':
           logger.info('🔧 Handling FILTER_CONTACTS...');
           result = await handleContactFiltering(intentAnalysis.extractedData, command);
+          break;
+          
+        case 'FILTER_CONTACTS_BY_LOCATION':
+          logger.info('🔧 Handling FILTER_CONTACTS_BY_LOCATION...');
+          result = await handleContactLocationFiltering(intentAnalysis.extractedData, command);
           break;
           
         case 'GENERAL_QUERY':
@@ -1460,6 +1495,133 @@ async function handleContactCreation(extractedData, originalCommand) {
   }
 }
 
+// Helper function to handle contact location filtering
+async function handleContactLocationFiltering(extractedData, originalCommand) {
+  try {
+    const { location, radius = 2, businessSector } = extractedData; // Default 2 mile radius, optional business sector
+    
+    logger.info('🔍 Contact Location Filtering Request:', { location, radius, businessSector, originalCommand });
+
+    // Validate required fields
+    if (!location) {
+      return {
+        success: false,
+        error: 'Missing location. Please specify where you want to find contacts.',
+        details: 'location is required for contact location filtering',
+        suggestion: 'Try: "find all my bridgeville contacts"'
+      };
+    }
+
+    // Log the filtering criteria
+    const filterDescription = businessSector 
+      ? `contacts within ${radius} miles of ${location} who are in ${businessSector} business sector`
+      : `contacts within ${radius} miles of ${location}`;
+    
+    logger.info(`🔍 Filtering for: ${filterDescription}`);
+
+    // Step 1: Geocode the location
+    logger.info('🗺️ Step 1: Geocoding location');
+    const geocodeLocation = location.includes(', PA') ? location : `${location}, PA`;
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(geocodeLocation)}&key=${googleApiSecret.value()}`;
+    
+    const geocodeResponse = await fetch(geocodeUrl);
+    const geocodeData = await geocodeResponse.json();
+
+    if (geocodeData.status !== 'OK' || !geocodeData.results[0]) {
+      logger.error('❌ Geocoding failed:', geocodeData.status, geocodeData.error_message);
+      return {
+        success: false,
+        error: 'Location not found',
+        details: `Could not find coordinates for: ${location}`,
+        suggestion: 'Try a different location or check the spelling'
+      };
+    }
+
+    const { lat, lng } = geocodeData.results[0].geometry.location;
+    logger.info('✅ Geocoded location:', { lat, lng, address: geocodeData.results[0].formatted_address });
+
+    // Step 2: Get all contacts with coordinates
+    logger.info('👥 Step 2: Querying contacts with coordinates');
+    const contactsRef = db.collection('contacts');
+    const contactsSnapshot = await contactsRef.get();
+    
+    const contactsWithCoordinates = [];
+    contactsSnapshot.forEach(doc => {
+      const contact = doc.data();
+      if (contact.latitude && contact.longitude) {
+        contactsWithCoordinates.push({
+          id: doc.id,
+          ...contact
+        });
+      }
+    });
+
+    logger.info(`✅ Found ${contactsWithCoordinates.length} contacts with coordinates`);
+
+    // Step 3: Calculate distances and filter by business sector
+    logger.info('📏 Step 3: Calculating distances and filtering by business sector');
+    const nearbyContacts = [];
+    
+    for (const contact of contactsWithCoordinates) {
+      const distance = calculateDistance(lat, lng, contact.latitude, contact.longitude);
+      
+      // Check distance first
+      if (distance <= radius) {
+        // If business sector is specified, check if contact matches
+        if (businessSector) {
+          const contactSector = contact.businessSector?.toLowerCase() || '';
+          const targetSector = businessSector.toLowerCase();
+          
+          // Check for exact match or partial match
+          if (contactSector.includes(targetSector) || targetSector.includes(contactSector)) {
+            nearbyContacts.push({
+              ...contact,
+              distance: Math.round(distance * 10) / 10 // Round to 1 decimal place
+            });
+          }
+        } else {
+          // No business sector filter, include all contacts within radius
+          nearbyContacts.push({
+            ...contact,
+            distance: Math.round(distance * 10) / 10 // Round to 1 decimal place
+          });
+        }
+      }
+    }
+
+    // Sort by distance
+    nearbyContacts.sort((a, b) => a.distance - b.distance);
+
+    const sectorInfo = businessSector ? ` who are in ${businessSector} business sector` : '';
+    logger.info(`✅ Found ${nearbyContacts.length} contacts within ${radius} miles of ${location}${sectorInfo}`);
+
+    const sectorMessage = businessSector ? ` who are in ${businessSector} business sector` : '';
+    
+    return {
+      success: true,
+      message: `Found ${nearbyContacts.length} contacts within ${radius} miles of ${location}${sectorMessage}`,
+      action: 'filter_contacts_by_location',
+      data: {
+        searchLocation: geocodeData.results[0].formatted_address,
+        coordinates: { lat, lng },
+        radius: radius,
+        businessSector: businessSector,
+        contacts: nearbyContacts,
+        totalContactsWithCoordinates: contactsWithCoordinates.length
+      },
+      contactsFound: nearbyContacts.length
+    };
+
+  } catch (error) {
+    logger.error('❌ Error in contact location filtering:', error);
+    return {
+      success: false,
+      error: 'Failed to process contact location filtering request',
+      details: 'Contact location filtering processing failed'
+    };
+  }
+}
+
 // Helper function to handle contact deletion
 async function handleContactDeletion(extractedData, originalCommand) {
   const { contactIdentifier, field } = extractedData;
@@ -2131,6 +2293,18 @@ async function handleBusinessProspecting(extractedData, originalCommand) {
       details: 'Business prospecting processing failed'
     };
   }
+}
+
+// Haversine formula to calculate distance between two coordinates
+function calculateDistance(lat1, lng1, lat2, lng2) {
+  const R = 3959; // Earth's radius in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c; // Distance in miles
 }
 
 // Helper function to handle contact filtering

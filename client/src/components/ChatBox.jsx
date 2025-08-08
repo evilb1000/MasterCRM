@@ -108,8 +108,30 @@ const isShowContactCommand = (msg) => {
     const match = msg.match(pattern);
     if (match) {
       const contactName = match[1].trim();
-      // Make sure it's not a list command or contacts with command
-      if (!lower.includes('list') && !lower.includes('lists') && !lower.includes('contacts with')) {
+      
+      // EXCLUDE location-based contact filtering patterns
+      const locationPatterns = [
+        /all my (.+) contacts/i,
+        /contacts in (.+)/i,
+        /(.+) contacts/i,
+        /contacts near (.+)/i,
+        /contacts from (.+)/i,
+        /find all contacts in (.+)/i,
+        /find my (.+) contacts/i,
+        /get (.+) contacts/i,
+        /show me (.+) contacts/i
+      ];
+      
+      // Check if this matches a location pattern
+      const isLocationPattern = locationPatterns.some(locPattern => {
+        return locPattern.test(msg);
+      });
+      
+      // Make sure it's not a list command, contacts with command, or location pattern
+      if (!lower.includes('list') && 
+          !lower.includes('lists') && 
+          !lower.includes('contacts with') &&
+          !isLocationPattern) {
         return { isCommand: true, contactName };
       }
     }
@@ -394,6 +416,31 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
               
               // Note: Removed call to old modal system since our new AI-powered modal is working correctly
             }
+          } else if (result.action === 'filter_contacts_by_location') {
+            actionType = 'filter_contacts_by_location';
+            console.log('🗺️ Location-based contact filtering response detected:', result);
+            
+            // Store contact data for modal display
+            // The contacts are nested in result.data.data.contacts
+            const contacts = result.data?.data?.contacts || result.data?.contacts || [];
+            if (contacts && contacts.length > 0) {
+              console.log('🗺️ Triggering location-based contact filtering modal with', contacts.length, 'contacts');
+              
+              // Set state for contact filtering results
+              setContactFilterResults({
+                contacts: contacts,
+                searchField: 'location',
+                filterCriteria: result.data.data?.searchLocation || result.data.searchLocation,
+                totalFound: result.contactsFound,
+                locationData: {
+                  searchLocation: result.data.data?.searchLocation || result.data.searchLocation,
+                  coordinates: result.data.data?.coordinates || result.data.coordinates,
+                  radius: result.data.data?.radius || result.data.radius,
+                  businessSector: result.data.data?.businessSector || result.data.businessSector
+                }
+              });
+              setShowContactFilterResults(true);
+            }
           } else {
             actionType = 'contact_action';
           }
@@ -503,6 +550,27 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
               });
               setShowContactFilterResults(true);
             }
+                      } else if (result.action === 'filter_contacts_by_location') {
+              actionType = 'filter_contacts_by_location';
+              console.log('🗺️ AI detected location-based contact filtering:', result);
+              
+              // The contacts are nested in result.data.data.contacts
+              const contacts = result.data?.data?.contacts || result.data?.contacts || [];
+              if (contacts && contacts.length > 0) {
+                setContactFilterResults({
+                  contacts: contacts,
+                  searchField: 'location',
+                  filterCriteria: result.data.data?.searchLocation || result.data.searchLocation,
+                  totalFound: result.contactsFound,
+                  locationData: {
+                    searchLocation: result.data.data?.searchLocation || result.data.searchLocation,
+                    coordinates: result.data.data?.coordinates || result.data.coordinates,
+                    radius: result.data.data?.radius || result.data.radius,
+                    businessSector: result.data.data?.businessSector || result.data.businessSector
+                  }
+                });
+                setShowContactFilterResults(true);
+              }
           } else if (result.action === 'prospect_businesses') {
             actionType = 'business_prospecting';
             console.log('🏢 AI detected business prospecting:', result);
@@ -751,7 +819,7 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
               </button>
             </div>
             <div style={styles.modalBody}>
-              <h3 style={styles.sectionTitle}>🤖 Contact Management</h3>
+              <h3 style={styles.sectionTitle}>Contact Management</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Update Contact:</strong> "update contact [name]'s [field] to [value]"</li>
                 <li><strong>Edit Contact:</strong> "edit [name]'s [field] to [value]"</li>
@@ -761,7 +829,7 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li><strong>Add Note:</strong> "add note to [name]: [note]"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>📞 Activity Creation</h3>
+              <h3 style={styles.sectionTitle}>Activity Creation</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Log Call:</strong> "log a call with [name]. We discussed [topic]"</li>
                 <li><strong>Log Call:</strong> "[name] called me and we discussed [topic]. Please log this activity."</li>
@@ -773,7 +841,7 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li><strong>Make Activity:</strong> "make an activity for [name]. We discussed [topic]"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>📋 List Creation</h3>
+              <h3 style={styles.sectionTitle}>List Creation</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Create List:</strong> "create list of [criteria]"</li>
                 <li><strong>Make List:</strong> "make list of [criteria]"</li>
@@ -781,7 +849,7 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li><strong>Generate List:</strong> "generate list of [criteria]"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>👤 Contact Display</h3>
+              <h3 style={styles.sectionTitle}>Contact Display</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Show Contact:</strong> "show me [name]"</li>
                 <li><strong>Display Contact:</strong> "display [name]"</li>
@@ -791,7 +859,7 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li><strong>Examples:</strong> "show me Elodie Wren", "find John Smith"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>🔍 Contact Filtering</h3>
+              <h3 style={styles.sectionTitle}>Contact Filtering</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Filter by Sector:</strong> "show me contacts with financial services"</li>
                 <li><strong>Filter by Location:</strong> "show me contacts with Pittsburgh"</li>
@@ -799,7 +867,19 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li><strong>Examples:</strong> "contacts with healthcare", "find contacts with tech"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>📊 Contact Lists</h3>
+              <h3 style={styles.sectionTitle}>Location-Based Contact Filtering</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Location Search:</strong> "find all my bridgeville contacts"</li>
+                <li><strong>Location Search:</strong> "find contacts in mt. lebanon"</li>
+                <li><strong>Location Search:</strong> "get bethel park contacts"</li>
+                <li><strong>Combined Search:</strong> "find all my bridgeville contacts who are investors"</li>
+                <li><strong>Combined Search:</strong> "find retail contacts around bridgeville"</li>
+                <li><strong>Combined Search:</strong> "find healthcare contacts in mt. lebanon"</li>
+                <li><strong>Combined Search:</strong> "find financial contacts near bethel park"</li>
+                <li><strong>Examples:</strong> "find my pittsburgh contacts", "get contacts from oakland"</li>
+              </ul>
+              
+              <h3 style={styles.sectionTitle}>Contact Lists</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Show Lists:</strong> "show me my lists"</li>
                 <li><strong>Display Lists:</strong> "display my lists"</li>
@@ -808,7 +888,7 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li><strong>What Lists:</strong> "what are my lists"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>🏢 Business Prospecting</h3>
+              <h3 style={styles.sectionTitle}>Business Prospecting</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Find Businesses:</strong> "find financial services businesses in Mt. Lebanon"</li>
                 <li><strong>Search Companies:</strong> "search for restaurants in Pittsburgh"</li>
@@ -820,7 +900,7 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li><strong>Retail Search:</strong> "find coffee shops in Bethel Park"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>📋 Task Creation</h3>
+              <h3 style={styles.sectionTitle}>Task Creation</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Contact Tasks:</strong></li>
                 <li>• "create a task for [contact] [date] regarding [description]"</li>
@@ -832,7 +912,7 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li>• "task for listing [address] [date] [description]"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>📅 Dynamic Date Parsing</h3>
+              <h3 style={styles.sectionTitle}>Dynamic Date Parsing</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Contact Examples:</strong></li>
                 <li>• "create a task for Elodie Wren today about calling Martin"</li>
@@ -844,7 +924,7 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li>• "task for listing 123 Oak Avenue August 22nd about property showing"</li>
               </ul>
               
-              <h3 style={styles.sectionTitle}>📝 Available Fields</h3>
+              <h3 style={styles.sectionTitle}>Available Fields</h3>
               <p style={styles.fieldsText}>
                 <strong>Contact fields:</strong> firstName, lastName, email, phone, company, address, businessSector, linkedin, notes
               </p>
@@ -902,7 +982,9 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
         <div style={styles.modalOverlay} onClick={() => setShowContactFilterResults(false)}>
           <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
             <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>🔍 Contact Filter Results</h2>
+              <h2 style={styles.modalTitle}>
+                {contactFilterResults.searchField === 'location' ? 'Location-Based Contact Results' : 'Contact Filter Results'}
+              </h2>
               <button 
                 onClick={() => setShowContactFilterResults(false)}
                 style={styles.closeButton}
@@ -913,9 +995,22 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
             </div>
             <div style={styles.modalBody}>
               <div style={styles.businessResultsHeader}>
-                <p><strong>Search Criteria:</strong> {contactFilterResults.filterCriteria}</p>
-                <p><strong>Search Field:</strong> {contactFilterResults.searchField}</p>
-                <p><strong>Contacts Found:</strong> {contactFilterResults.totalFound}</p>
+                {contactFilterResults.searchField === 'location' ? (
+                  <>
+                    <p><strong>Location:</strong> {contactFilterResults.locationData?.searchLocation}</p>
+                    <p><strong>Search Radius:</strong> {contactFilterResults.locationData?.radius} miles</p>
+                    {contactFilterResults.locationData?.businessSector && (
+                      <p><strong>Business Sector:</strong> {contactFilterResults.locationData.businessSector}</p>
+                    )}
+                    <p><strong>Contacts Found:</strong> {contactFilterResults.totalFound}</p>
+                  </>
+                ) : (
+                  <>
+                    <p><strong>Search Criteria:</strong> {contactFilterResults.filterCriteria}</p>
+                    <p><strong>Search Field:</strong> {contactFilterResults.searchField}</p>
+                    <p><strong>Contacts Found:</strong> {contactFilterResults.totalFound}</p>
+                  </>
+                )}
               </div>
               
               <div style={styles.businessesContainer}>
@@ -930,10 +1025,13 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                   >
                     <h4 style={styles.businessName}>{contact.firstName} {contact.lastName}</h4>
                     <p style={styles.businessAddress}>{contact.email}</p>
-                    {contact.phone && <p style={styles.businessPhone}>📞 {contact.phone}</p>}
-                    {contact.company && <p style={styles.businessAddress}>🏢 {contact.company}</p>}
-                    {contact.businessSector && <p style={styles.businessSearchTerm}>💼 {contact.businessSector}</p>}
-                    {contact.address && <p style={styles.businessAddress}>📍 {contact.address}</p>}
+                    {contact.phone && <p style={styles.businessPhone}>{contact.phone}</p>}
+                    {contact.company && <p style={styles.businessAddress}>{contact.company}</p>}
+                    {contact.businessSector && <p style={styles.businessSearchTerm}>{contact.businessSector}</p>}
+                    {contact.address && <p style={styles.businessAddress}>{contact.address}</p>}
+                    {contactFilterResults.searchField === 'location' && contact.distance && (
+                      <p style={styles.businessSearchTerm}>{contact.distance} miles away</p>
+                    )}
                   </button>
                 ))}
               </div>
