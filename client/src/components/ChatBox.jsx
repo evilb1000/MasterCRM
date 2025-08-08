@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../firebase';
 import { ENDPOINTS } from '../config.js';
 import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation, isCombinedListCreationAndAttachmentCommand, processCombinedListCreationAndAttachment, isCombinedActivityCreationAndListingAttachmentCommand, processCombinedActivityCreationAndListingAttachment, isBusinessProspectingCommand, processBusinessProspecting } from '../services/aiContactActions';
-import { isTaskCreationCommand, processTaskCreation } from '../services/aiTaskActions';
+import { isTaskCreationCommand, processTaskCreation, isTaskFilteringCommand, processTaskFiltering } from '../services/aiTaskActions';
 
 // Helper function to check if a query is CRM-related
 function isCRMQuery(message) {
@@ -122,16 +124,30 @@ const isShowContactCommand = (msg) => {
         /show me (.+) contacts/i
       ];
       
+      // EXCLUDE task filtering patterns
+      const taskPatterns = [
+        /my tasks for (.+)/i,
+        /tasks for (.+)/i,
+        /tasks (.+)/i,
+        /my tasks (.+)/i
+      ];
+      
       // Check if this matches a location pattern
       const isLocationPattern = locationPatterns.some(locPattern => {
         return locPattern.test(msg);
       });
       
-      // Make sure it's not a list command, contacts with command, or location pattern
+      // Check if this matches a task pattern
+      const isTaskPattern = taskPatterns.some(taskPattern => {
+        return taskPattern.test(msg);
+      });
+      
+      // Make sure it's not a list command, contacts with command, location pattern, or task pattern
       if (!lower.includes('list') && 
           !lower.includes('lists') && 
           !lower.includes('contacts with') &&
-          !isLocationPattern) {
+          !isLocationPattern &&
+          !isTaskPattern) {
         return { isCommand: true, contactName };
       }
     }
@@ -209,6 +225,11 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
   const [businessResults, setBusinessResults] = useState(null);
   const [showContactFilterResults, setShowContactFilterResults] = useState(false);
   const [contactFilterResults, setContactFilterResults] = useState(null);
+  const [showTaskFilterResults, setShowTaskFilterResults] = useState(false);
+  const [taskFilterResults, setTaskFilterResults] = useState(null);
+  const [showTaskDetails, setShowTaskDetails] = useState(false);
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [editingTask, setEditingTask] = useState(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -304,13 +325,15 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
       const isContact = isContactActionCommand(currentMessage);
       const isBusinessProspecting = isBusinessProspectingCommand(currentMessage);
       const isTaskCreation = isTaskCreationCommand(currentMessage);
+      const isTaskFiltering = isTaskFilteringCommand(currentMessage);
       console.log('🔍 Command Analysis:', {
         message: currentMessage,
         isCombinedListCreationAndAttachment: isCombinedList,
         isCombinedActivityCreationAndListingAttachment: isCombinedActivity,
         isContactAction: isContact,
         isBusinessProspecting: isBusinessProspecting,
-        isTaskCreation: isTaskCreation
+        isTaskCreation: isTaskCreation,
+        isTaskFiltering: isTaskFiltering
       });
       
       // Additional debugging for activity patterns
@@ -318,8 +341,30 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
         console.log('🔍 Activity pattern detected in message:', currentMessage);
       }
 
+      // Check if this is a task filtering command (HIGHEST PRIORITY)
+      if (isTaskFiltering) {
+        console.log('📋 Routing to Task Filtering endpoint');
+        const result = await processTaskFiltering(currentMessage);
+        
+        if (result.success) {
+          responseText = result.message;
+          actionType = 'task_filtering';
+          
+          // Store task data for modal display
+          if (result.tasks && result.tasks.length > 0) {
+            setTaskFilterResults({
+              tasks: result.tasks,
+              timePeriod: result.timePeriod,
+              totalFound: result.totalFound
+            });
+            setShowTaskFilterResults(true);
+          }
+        } else {
+          throw new Error(result.error);
+        }
+      }
       // Check if this is a task creation command (HIGHEST PRIORITY - before list creation)
-      if (isTaskCreation) {
+      else if (isTaskCreation) {
         console.log('📋 Routing to Task Creation endpoint');
         const result = await processTaskCreation(currentMessage);
         
@@ -481,49 +526,6 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
               }
             }));
           }
-        } else {
-          throw new Error(result.error);
-        }
-      }
-      // Check if this is a task creation command (HIGHEST PRIORITY - before list creation)
-      else if (isTaskCreation) {
-        console.log('📋 Routing to Task Creation endpoint');
-        const result = await processTaskCreation(currentMessage);
-        
-        if (result.success) {
-          // Handle both contact and listing tasks
-          if (result.contact) {
-            // Contact task
-            responseText = `${result.message}\n\nTask Details:\n- Title: ${result.task.title}\n- Description: ${result.task.description}\n- Due Date: ${result.task.dueDate}\n- Priority: ${result.task.priority}\n- Status: ${result.task.status}\n- Task ID: ${result.taskId}\n\nContact: ${result.contact.firstName} ${result.contact.lastName} (${result.contact.email})`;
-            
-            // Emit a custom event to refresh tasks
-            console.log('🎯 AI Contact Task created, dispatching refresh event');
-            window.dispatchEvent(new CustomEvent('aiTaskCreated', {
-              detail: {
-                taskId: result.taskId,
-                contactId: result.contact.id,
-                taskTitle: result.task.title,
-                dueDate: result.task.dueDate
-              }
-            }));
-          } else if (result.listing) {
-            // Listing task
-            const listingName = result.listing.streetAddress || result.listing.address || result.listing.name || 'Unknown Listing';
-            responseText = `${result.message}\n\nTask Details:\n- Title: ${result.task.title}\n- Description: ${result.task.description}\n- Due Date: ${result.task.dueDate}\n- Priority: ${result.task.priority}\n- Status: ${result.task.status}\n- Task ID: ${result.taskId}\n\nListing: ${listingName}`;
-            
-            // Emit a custom event to refresh tasks
-            console.log('🎯 AI Listing Task created, dispatching refresh event');
-            window.dispatchEvent(new CustomEvent('aiTaskCreated', {
-              detail: {
-                taskId: result.taskId,
-                listingId: result.listing.id,
-                taskTitle: result.task.title,
-                dueDate: result.task.dueDate
-              }
-            }));
-          }
-          
-          actionType = 'task_creation';
         } else {
           throw new Error(result.error);
         }
@@ -701,6 +703,94 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
 
   const handleAboutClick = () => {
     setShowAbout(true);
+  };
+
+  // Task management functions
+  const handleTaskClick = (task) => {
+    setSelectedTask(task);
+    setEditingTask({ ...task });
+    setShowTaskDetails(true);
+  };
+
+  const handleUpdateTask = async () => {
+    if (!editingTask || !editingTask.title.trim()) return;
+    
+    try {
+      const taskRef = doc(db, 'tasks', editingTask.id);
+      await updateDoc(taskRef, {
+        ...editingTask,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Update local state in taskFilterResults
+      if (taskFilterResults) {
+        setTaskFilterResults({
+          ...taskFilterResults,
+          tasks: taskFilterResults.tasks.map(task => 
+            task.id === editingTask.id ? { ...task, ...editingTask } : task
+          )
+        });
+      }
+      
+      setShowTaskDetails(false);
+      setSelectedTask(null);
+      setEditingTask(null);
+    } catch (error) {
+      console.error('Error updating task:', error);
+      alert('Failed to update task: ' + error.message);
+    }
+  };
+
+  const handleStatusChange = async (taskId, newStatus) => {
+    try {
+      const taskRef = doc(db, 'tasks', taskId);
+      await updateDoc(taskRef, {
+        status: newStatus,
+        updatedAt: serverTimestamp()
+      });
+      
+      // Update local state in taskFilterResults
+      if (taskFilterResults) {
+        setTaskFilterResults({
+          ...taskFilterResults,
+          tasks: taskFilterResults.tasks.map(task => 
+            task.id === taskId ? { ...task, status: newStatus } : task
+          )
+        });
+      }
+      
+      // Update editing task if it's the same one
+      if (editingTask && editingTask.id === taskId) {
+        setEditingTask({ ...editingTask, status: newStatus });
+      }
+    } catch (error) {
+      console.error('Error updating task status:', error);
+      alert('Failed to update task status: ' + error.message);
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+    
+    try {
+      await deleteDoc(doc(db, 'tasks', taskId));
+      
+      // Update local state in taskFilterResults
+      if (taskFilterResults) {
+        setTaskFilterResults({
+          ...taskFilterResults,
+          tasks: taskFilterResults.tasks.filter(task => task.id !== taskId),
+          totalFound: taskFilterResults.totalFound - 1
+        });
+      }
+      
+      setShowTaskDetails(false);
+      setSelectedTask(null);
+      setEditingTask(null);
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      alert('Failed to delete task: ' + error.message);
+    }
   };
 
   return (
@@ -912,6 +1002,15 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                 <li>• "task for listing [address] [date] [description]"</li>
               </ul>
               
+              <h3 style={styles.sectionTitle}>Task Filtering</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Today's Tasks:</strong> "show my tasks for today"</li>
+                <li><strong>Tomorrow's Tasks:</strong> "show tasks for tomorrow"</li>
+                <li><strong>This Week:</strong> "show my tasks for the week"</li>
+                <li><strong>Next Week:</strong> "find tasks for next week"</li>
+                <li><strong>Examples:</strong> "display my tasks for today", "get tasks for the week"</li>
+              </ul>
+              
               <h3 style={styles.sectionTitle}>Dynamic Date Parsing</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Contact Examples:</strong></li>
@@ -1034,6 +1133,147 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
                     )}
                   </button>
                 ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Filter Results Modal */}
+      {showTaskFilterResults && taskFilterResults && (
+        <div style={styles.modalOverlay} onClick={() => setShowTaskFilterResults(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Task Filter Results</h2>
+              <button 
+                onClick={() => setShowTaskFilterResults(false)}
+                style={styles.closeButton}
+                className="close-button"
+              >
+                ×
+              </button>
+            </div>
+            <div style={styles.modalBody}>
+              <div style={styles.businessResultsHeader}>
+                <p><strong>Time Period:</strong> {taskFilterResults.timePeriod}</p>
+                <p><strong>Tasks Found:</strong> {taskFilterResults.totalFound}</p>
+              </div>
+              
+              <div style={styles.businessesContainer}>
+                {taskFilterResults.tasks.map((task, index) => (
+                  <div 
+                    key={task.id} 
+                    style={styles.businessCard}
+                    onClick={() => handleTaskClick(task)}
+                    className="task-card-button"
+                  >
+                    <h4 style={styles.businessName}>{task.title}</h4>
+                    <p style={styles.businessAddress}>{task.description}</p>
+                    <p style={styles.businessPhone}>Due: {new Date(task.dueDate).toLocaleDateString()}</p>
+                    <p style={styles.businessSearchTerm}>Priority: {task.priority}</p>
+                    <p style={styles.businessSearchTerm}>Status: {task.status}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Task Details Modal */}
+      {showTaskDetails && editingTask && (
+        <div style={styles.modalOverlay} onClick={() => setShowTaskDetails(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>Edit Task</h2>
+              <button 
+                onClick={() => setShowTaskDetails(false)}
+                style={styles.closeButton}
+                className="close-button"
+              >
+                ×
+              </button>
+            </div>
+            <div style={styles.modalBody}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Title</label>
+                <input
+                  type="text"
+                  value={editingTask.title}
+                  onChange={(e) => setEditingTask({...editingTask, title: e.target.value})}
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Description</label>
+                <textarea
+                  value={editingTask.description}
+                  onChange={(e) => setEditingTask({...editingTask, description: e.target.value})}
+                  style={styles.textarea}
+                  rows={4}
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Due Date</label>
+                <input
+                  type="date"
+                  value={editingTask.dueDate}
+                  onChange={(e) => setEditingTask({...editingTask, dueDate: e.target.value})}
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Priority</label>
+                <select
+                  value={editingTask.priority}
+                  onChange={(e) => setEditingTask({...editingTask, priority: e.target.value})}
+                  style={styles.select}
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Status</label>
+                <select
+                  value={editingTask.status}
+                  onChange={(e) => setEditingTask({...editingTask, status: e.target.value})}
+                  style={styles.select}
+                >
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+
+              <div style={styles.modalActions}>
+                <button
+                  onClick={() => handleDeleteTask(editingTask.id)}
+                  style={styles.deleteButton}
+                >
+                  Delete Task
+                </button>
+                <button
+                  onClick={() => {
+                    setShowTaskDetails(false);
+                    setSelectedTask(null);
+                    setEditingTask(null);
+                  }}
+                  style={styles.cancelButton}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateTask}
+                  style={styles.saveButton}
+                >
+                  Update Task
+                </button>
               </div>
             </div>
           </div>
@@ -1383,6 +1623,61 @@ const styles = {
     color: '#999',
     fontStyle: 'italic',
   },
+  formGroup: {
+    marginBottom: '20px',
+  },
+  label: {
+    display: 'block',
+    marginBottom: '5px',
+    fontWeight: '500',
+    color: '#2c2c2c',
+    fontSize: '14px',
+  },
+  input: {
+    width: '100%',
+    padding: '10px',
+    border: '1px solid rgba(0, 0, 0, 0.1)',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontFamily: 'Georgia, serif',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+  },
+  textarea: {
+    width: '100%',
+    padding: '10px',
+    border: '1px solid rgba(0, 0, 0, 0.1)',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontFamily: 'Georgia, serif',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    resize: 'vertical',
+  },
+  select: {
+    width: '100%',
+    padding: '10px',
+    border: '1px solid rgba(0, 0, 0, 0.1)',
+    borderRadius: '6px',
+    fontSize: '14px',
+    fontFamily: 'Georgia, serif',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+  },
+  modalActions: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: '10px',
+    marginTop: '30px',
+  },
+  saveButton: {
+    padding: '10px 20px',
+    backgroundColor: '#2c2c2c',
+    color: 'white',
+    border: 'none',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontFamily: 'Georgia, serif',
+    flex: 1,
+  },
 };
 
 // Add CSS animation for spinner
@@ -1446,6 +1741,19 @@ styleSheet.textContent = `
   }
   
   .contact-card-button:active {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
+  }
+  
+  /* Hover effect for task cards */
+  .task-card-button:hover {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    transform: translateY(-2px) !important;
+    cursor: pointer !important;
+  }
+  
+  .task-card-button:active {
     transform: translateY(-1px) !important;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
   }

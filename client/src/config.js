@@ -12,6 +12,7 @@ export const ENDPOINTS = {
   AI_CONTACT_ACTION: 'https://aicontactaction-obagwr34kq-uc.a.run.app',
   AI_CREATE_LIST: 'https://aicontactaction-obagwr34kq-uc.a.run.app', // Handled by aiContactAction function
   AI_CREATE_TASK: 'https://us-central1-lod-crm-systems.cloudfunctions.net/aiCreateTask', // Handled by aiCreateTask function
+  AI_FILTER_TASKS: 'https://us-central1-lod-crm-systems.cloudfunctions.net/aiFilterTasks', // Handled by aiFilterTasks function
   CHAT: 'https://us-central1-lod-crm-systems.cloudfunctions.net/chat',
   ADD_CONTACT_LIST_TO_LISTING: 'https://us-central1-lod-crm-systems.cloudfunctions.net/addContactListToListing',
   GET_LISTINGS: 'https://us-central1-lod-crm-systems.cloudfunctions.net/getListings',

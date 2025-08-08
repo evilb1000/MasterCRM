@@ -191,6 +191,7 @@ Available actions:
 - COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT: User wants to create an activity for a contact AND attach it to a listing in one command
 - PROSPECT_BUSINESSES: User wants to find businesses in a specific location and category (find businesses, prospect, search for companies, locate businesses)
 - FILTER_CONTACTS_BY_LOCATION: User wants to find contacts within a specific geographic area (find contacts in [location], get [location] contacts, contacts near [location])
+- FILTER_TASKS: User wants to see tasks for a specific time period (show my tasks for today, show tasks for the week, find tasks for tomorrow)
 - GENERAL_QUERY: User is asking a general question about the CRM system
 
 **CRITICAL: Use COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT when a listing is mentioned in the activity. Use CREATE_ACTIVITY only when NO listing is mentioned.**
@@ -268,6 +269,15 @@ IMPORTANT: For FILTER_CONTACTS_BY_LOCATION, look for these patterns:
 - "show me [businessSector] contacts in [location]"
 - "contacts in [location] who are [businessSector]"
 
+IMPORTANT: For FILTER_TASKS, look for these patterns:
+- "show my tasks for [timePeriod]"
+- "show tasks for [timePeriod]"
+- "display my tasks for [timePeriod]"
+- "find my tasks for [timePeriod]"
+- "get my tasks for [timePeriod]"
+- "tasks for [timePeriod]"
+- "my tasks for [timePeriod]"
+
 CRITICAL: FILTER_CONTACTS vs CREATE_LIST DISTINCTION
 
 FILTER_CONTACTS = "SHOW ME" (display/filter existing contacts temporarily):
@@ -336,6 +346,7 @@ You are an intelligent CRM assistant that understands the context and intent of 
     "location": "location to search in (if prospecting businesses or location-based contact filtering)",
     "businessSector": "business sector to filter by (if location-based contact filtering)",
     "radius": "search radius in miles (if location-based contact filtering, default 2)",
+    "timePeriod": "time period for task filtering (today, tomorrow, this_week, next_week)",
     "filterCriteria": "the criteria to filter contacts by (if filtering contacts)",
     "filterField": "businessSector|company|address (the field to search in)"
   },
@@ -522,6 +533,11 @@ Respond with ONLY the JSON object, no other text.`;
         case 'FILTER_CONTACTS_BY_LOCATION':
           logger.info('🔧 Handling FILTER_CONTACTS_BY_LOCATION...');
           result = await handleContactLocationFiltering(intentAnalysis.extractedData, command);
+          break;
+          
+        case 'FILTER_TASKS':
+          logger.info('🔧 Handling FILTER_TASKS...');
+          result = await handleTaskFiltering(intentAnalysis.extractedData, command);
           break;
           
         case 'GENERAL_QUERY':
@@ -2431,6 +2447,118 @@ async function handleContactFiltering(extractedData, originalCommand) {
   }
 }
 
+// Handle task filtering
+async function handleTaskFiltering(extractedData, originalCommand) {
+  try {
+    const { timePeriod = 'today' } = extractedData;
+    
+    logger.info('🔍 Task Filtering Request:', { timePeriod, originalCommand });
+
+    // Validate required fields
+    if (!timePeriod) {
+      return {
+        success: false,
+        error: 'Missing time period. Please specify when you want to see tasks.',
+        details: 'timePeriod is required for task filtering',
+        suggestion: 'Try: "show my tasks for today" or "show my tasks for the week"'
+      };
+    }
+
+    // Get current date and calculate date ranges
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    let startDate, endDate, periodDescription;
+
+    switch (timePeriod) {
+      case 'today':
+        startDate = today;
+        endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+        periodDescription = 'today';
+        break;
+      case 'tomorrow':
+        startDate = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+        endDate = new Date(startDate.getTime() + 24 * 60 * 60 * 1000);
+        periodDescription = 'tomorrow';
+        break;
+      case 'this_week':
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay());
+        startDate = startOfWeek;
+        endDate = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
+        periodDescription = 'this week';
+        break;
+      case 'next_week':
+        const nextWeekStart = new Date(today);
+        nextWeekStart.setDate(today.getDate() - today.getDay() + 7);
+        startDate = nextWeekStart;
+        endDate = new Date(nextWeekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+        periodDescription = 'next week';
+        break;
+      default:
+        startDate = today;
+        endDate = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+        periodDescription = 'today';
+    }
+
+    logger.info(`📅 Filtering tasks for ${periodDescription}:`, { startDate, endDate });
+
+    // Query tasks from Firestore
+    const tasksRef = db.collection('tasks');
+    const snapshot = await tasksRef.get();
+    
+    const allTasks = [];
+    snapshot.forEach(doc => {
+      const task = doc.data();
+      if (task.dueDate) {
+        const taskDate = new Date(task.dueDate);
+        if (taskDate >= startDate && taskDate < endDate) {
+          allTasks.push({
+            id: doc.id,
+            ...task
+          });
+        }
+      }
+    });
+
+    // Sort by due date and priority
+    allTasks.sort((a, b) => {
+      const dateA = new Date(a.dueDate);
+      const dateB = new Date(b.dueDate);
+      if (dateA.getTime() !== dateB.getTime()) {
+        return dateA - dateB;
+      }
+      
+      // If same date, sort by priority
+      const priorityOrder = { high: 3, medium: 2, low: 1 };
+      return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+    });
+
+    logger.info(`✅ Found ${allTasks.length} tasks for ${periodDescription}`);
+
+    return {
+      success: true,
+      message: `Found ${allTasks.length} tasks for ${periodDescription}`,
+      action: 'filter_tasks',
+      data: {
+        tasks: allTasks,
+        timePeriod: timePeriod,
+        periodDescription: periodDescription,
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString()
+      },
+      totalFound: allTasks.length
+    };
+
+  } catch (error) {
+    logger.error('❌ Error in task filtering:', error);
+    return {
+      success: false,
+      error: 'Failed to process task filtering request',
+      details: 'Task filtering processing failed'
+    };
+  }
+}
+
 // Handle task creation
 async function handleTaskCreation(extractedData, originalCommand) {
   try {
@@ -3412,5 +3540,133 @@ export const cleanupOldProspects = onSchedule({
     
   } catch (error) {
     logger.error('❌ Error in cleanupOldProspects:', error);
+  }
+});
+
+// AI Task Filtering Cloud Function
+export const aiFilterTasks = onRequest(
+  { secrets: [openaiApiSecret] },
+  async (req, res) => {
+    // Add CORS headers
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+    
+    try {
+      logger.info('🔍 AI Task Filtering request received:', req.body);
+    
+    const { command, timePeriod } = req.body;
+    
+    if (!command) {
+      return res.status(400).json({
+        error: 'Command is required',
+        details: 'No command provided in request body'
+      });
+    }
+
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: openaiApiSecret.value(),
+    });
+
+    // Step 1: Analyze user intent with GPT
+    const intentPrompt = `
+You are a CRM assistant that analyzes user requests and determines what they want to do with task information.
+
+Available actions:
+- FILTER_TASKS: User wants to see tasks for a specific time period (show my tasks for today, show tasks for the week, find tasks for tomorrow)
+
+IMPORTANT: For FILTER_TASKS, look for these patterns:
+- "show my tasks for [timePeriod]"
+- "show tasks for [timePeriod]"
+- "display my tasks for [timePeriod]"
+- "find my tasks for [timePeriod]"
+- "get my tasks for [timePeriod]"
+- "tasks for [timePeriod]"
+- "my tasks for [timePeriod]"
+
+You are an intelligent CRM assistant that understands the context and intent of user requests. Analyze the following user request and respond with ONLY a JSON object in this exact format:
+
+{
+  "intent": "FILTER_TASKS",
+  "confidence": 0.0-1.0,
+  "extractedData": {
+    "timePeriod": "today|tomorrow|this_week|next_week"
+  },
+  "userMessage": "A friendly response explaining what you understood they want to do"
+}
+
+CRITICAL CONTEXT UNDERSTANDING RULES:
+
+1. TASK FILTERING:
+   - FILTER_TASKS: User wants to see tasks for a specific time period
+   - Look for time period indicators: "today", "tomorrow", "this week", "next week", "the week"
+   - Default to "today" if no specific time period is mentioned
+
+2. EXAMPLES:
+   - "show my tasks for today" → FILTER_TASKS (timePeriod: "today")
+   - "show tasks for the week" → FILTER_TASKS (timePeriod: "this_week")
+   - "find my tasks for tomorrow" → FILTER_TASKS (timePeriod: "tomorrow")
+   - "get tasks for next week" → FILTER_TASKS (timePeriod: "next_week")
+
+Use your contextual understanding to determine the user's intent based on the meaning and context, not just keywords.
+
+User request: "${command}"
+
+Respond with ONLY the JSON object:`;
+
+    const intentResponse = await openai.chat.completions.create({
+      model: "gpt-4",
+      messages: [{ role: "user", content: intentPrompt }],
+      temperature: 0.1,
+      max_tokens: 500
+    });
+
+    const intentAnalysis = JSON.parse(intentResponse.choices[0].message.content);
+    logger.info('🤖 Intent Analysis:', intentAnalysis);
+
+    // Step 2: Process the intent
+    let result = {};
+
+    switch (intentAnalysis.intent) {
+      case 'FILTER_TASKS':
+        logger.info('🔧 Handling FILTER_TASKS...');
+        result = await handleTaskFiltering(intentAnalysis.extractedData, command);
+        break;
+        
+      default:
+        logger.info(`❌ Unknown intent type: ${intentAnalysis.intent}`);
+        return res.status(400).json({ 
+          error: 'Unknown action type. Please try rephrasing your request.',
+          details: 'Invalid intent type'
+        });
+    }
+
+    logger.info('✅ Final result:', JSON.stringify(result, null, 2));
+    res.json(result);
+
+  } catch (error) {
+    logger.error('❌ Error in aiFilterTasks function:', error);
+    
+    // Handle specific OpenAI errors
+    if (error.status === 401) {
+      return res.status(401).json({ error: 'Invalid OpenAI API key' });
+    } else if (error.status === 429) {
+      return res.status(429).json({ error: 'Rate limit exceeded. Please try again later.' });
+    } else if (error.status === 400) {
+      return res.status(400).json({ error: 'Invalid request to OpenAI API' });
+    }
+    
+    // Generic error response
+    res.status(500).json({ 
+      error: 'An error occurred while processing your task filtering request',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
