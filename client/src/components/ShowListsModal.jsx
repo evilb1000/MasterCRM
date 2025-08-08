@@ -78,10 +78,11 @@ const ShowListsModal = ({ open, onClose, onShowContactDetail, contactDetailOpen 
       pointerEvents: open && !contactDetailOpen ? 'auto' : 'none'
     }}>
       <div style={{
-        ...styles.sidebar,
-        transform: open ? 'translateX(0)' : 'translateX(100%)',
+        ...styles.centeredModal,
+        transform: open ? 'translate(-50%, -50%) scale(1)' : 'translate(-50%, -50%) scale(0.95)',
+        opacity: open ? 1 : 0,
         boxShadow: '0 0 32px 0 rgba(30,30,60,0.18)',
-        transition: 'transform 0.35s cubic-bezier(.4,1.2,.4,1)',
+        transition: 'transform 0.35s cubic-bezier(.4,1.2,.4,1), opacity 0.35s cubic-bezier(.4,1.2,.4,1)',
       }}>
         <button style={styles.closeButton} onClick={onClose} aria-label="Close">×</button>
         <h2 style={styles.title}>Your Contact Lists</h2>
@@ -189,17 +190,16 @@ const styles = {
     display: 'block',
     transition: 'background 0.3s',
   },
-  sidebar: {
+  centeredModal: {
     position: 'fixed',
-    top: 0,
-    right: 0,
-    height: '100vh',
-    width: '370px',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    width: '450px',
     maxWidth: '95vw',
+    maxHeight: '80vh',
     background: '#f8f6f1',
-    borderLeft: '1.5px solid rgba(40,40,60,0.08)',
-    borderTopLeftRadius: '18px',
-    borderBottomLeftRadius: '18px',
+    borderRadius: '18px',
     padding: '38px 32px 28px 32px',
     overflowY: 'auto',
     fontFamily: 'Georgia, serif',
@@ -207,8 +207,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
-    minHeight: '100vh',
-    boxShadow: '-8px 0 32px rgba(0,0,0,0.10)',
+    boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
   },
   closeButton: {
     position: 'absolute',
