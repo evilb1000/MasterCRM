@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { db } from './firebase';
 import ChatBox from './components/ChatBox';
 import Contacts from './pages/Contacts';
 import Listings from './pages/Listings';
@@ -7,16 +9,65 @@ import Prospects from './pages/Prospects';
 import Tasks from './pages/Tasks';
 import ShowListsModal from './components/ShowListsModal';
 import ContactModal from './components/ContactModal';
+import ContactsFilterModal from './components/ContactsFilterModal';
 
 const HomePage = () => {
   const navigate = useNavigate();
   const [showListsModal, setShowListsModal] = useState(false);
   const [selectedContact, setSelectedContact] = useState(null);
   const [showContactDetail, setShowContactDetail] = useState(false);
+  const [showContactsFilterModal, setShowContactsFilterModal] = useState(false);
+  const [filterSearchCriteria, setFilterSearchCriteria] = useState('');
 
   const handleShowContactDetail = (contact) => {
     setSelectedContact(contact);
     setShowContactDetail(true);
+  };
+
+  const handleShowContact = async (contactName) => {
+    try {
+      // Search for contacts by name (first name, last name, or full name)
+      const contactsRef = collection(db, 'contacts');
+      const snapshot = await getDocs(contactsRef);
+      
+      const contacts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Find matching contact (case-insensitive search)
+      const searchName = contactName.toLowerCase();
+      const matchingContact = contacts.find(contact => {
+        const firstName = (contact.firstName || '').toLowerCase();
+        const lastName = (contact.lastName || '').toLowerCase();
+        const fullName = `${firstName} ${lastName}`.trim();
+        
+        return firstName.includes(searchName) || 
+               lastName.includes(searchName) || 
+               fullName.includes(searchName);
+      });
+      
+      if (matchingContact) {
+        setSelectedContact(matchingContact);
+        setShowContactDetail(true);
+      } else {
+        // If no contact found, show an alert or handle gracefully
+        alert(`Contact "${contactName}" not found.`);
+      }
+    } catch (error) {
+      console.error('Error searching for contact:', error);
+      alert('Error searching for contact. Please try again.');
+    }
+  };
+
+  const handleShowContactsWith = (searchCriteria, searchField = null, filterCriteria = null) => {
+    // Handle both old format (string) and new format (contacts array)
+    if (typeof searchCriteria === 'string') {
+      // Old format - just the search criteria string
+      setFilterSearchCriteria(searchCriteria);
+      setShowContactsFilterModal(true);
+    } else if (Array.isArray(searchCriteria)) {
+      // New format - contacts array from AI response
+      setFilterSearchCriteria(filterCriteria || 'Unknown criteria');
+      setShowContactsFilterModal(true);
+    }
   };
 
   return (
@@ -27,7 +78,12 @@ const HomePage = () => {
         
         {/* Chat Box */}
         <div style={styles.chatContainer}>
-          <ChatBox onShowLists={() => setShowListsModal(true)} />
+          <ChatBox 
+            onShowLists={() => setShowListsModal(true)} 
+            onShowContact={handleShowContact}
+            onShowContactsWith={handleShowContactsWith}
+            onShowContactDetail={handleShowContactDetail}
+          />
         </div>
         
         {/* Navigation */}
@@ -123,6 +179,15 @@ const HomePage = () => {
           mode="view"
         />
       )}
+
+      {/* Contacts Filter Modal */}
+      <ContactsFilterModal
+        open={showContactsFilterModal}
+        onClose={() => setShowContactsFilterModal(false)}
+        searchCriteria={filterSearchCriteria}
+        onShowContactDetail={handleShowContactDetail}
+        contactDetailOpen={showContactDetail}
+      />
     </div>
   );
 };
@@ -235,7 +300,7 @@ const styles = {
 // Add hover effects
 const styleSheet = document.createElement('style');
 styleSheet.textContent = `
-  button:hover:not(.activity-button) {
+  button:hover:not(.activity-button):not(.contact-card-button) {
     background-color: rgba(0, 0, 0, 0.9) !important;
     transform: translateY(-2px);
     box-shadow: 0 8px 25px rgba(0,0,0,0.3);

@@ -184,7 +184,8 @@ Available actions:
 - DELETE_CONTACT: User wants to delete a contact or contact field
 - SEARCH_CONTACT: User wants to find or search for contacts
 - LIST_CONTACTS: User wants to see all contacts
-- CREATE_LIST: User wants to create a contact list based on criteria
+- CREATE_LIST: User wants to create a contact list based on criteria (MUST include "create" keyword)
+- FILTER_CONTACTS: User wants to display/filter existing contacts temporarily (MUST include "show me" or similar display keywords)
 - ATTACH_LIST_TO_LISTING: User wants to attach an existing contact list to a listing
 - COMBINED_LIST_CREATION_AND_ATTACHMENT: User wants to create a contact list with criteria and then attach it to a listing in one command
 - COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT: User wants to create an activity for a contact AND attach it to a listing in one command
@@ -246,6 +247,27 @@ IMPORTANT: For PROSPECT_BUSINESSES, look for these patterns:
 - "Get [businessCategory] prospects in [location]"
 - "Find companies in [location] that do [businessCategory]"
 
+CRITICAL: FILTER_CONTACTS vs CREATE_LIST DISTINCTION
+
+FILTER_CONTACTS = "SHOW ME" (display/filter existing contacts temporarily):
+- "show me all contacts with [criteria]"
+- "show me contacts with [criteria]"
+- "find contacts with [criteria]"
+- "display contacts with [criteria]"
+- "get contacts with [criteria]"
+- "contacts with [criteria]"
+
+CREATE_LIST = "CREATE" (make a new permanent list):
+- "create a list with [criteria]"
+- "create a contact list with [criteria]"
+- "make a list with [criteria]"
+- "build a list with [criteria]"
+- "generate a list with [criteria]"
+- "create list with [criteria]"
+- "make contact list with [criteria]"
+
+KEY DIFFERENCE: "show me" = FILTER_CONTACTS, "create" = CREATE_LIST
+
 Activity type detection from context:
 - "emailed", "email", "sent email" → email
 - "called", "phone call", "phoned" → call
@@ -263,7 +285,7 @@ Contact identification can be by:
 
 Analyze the following user request and respond with ONLY a JSON object in this exact format:
 {
-        "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|ATTACH_LIST_TO_LISTING|COMBINED_LIST_CREATION_AND_ATTACHMENT|COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT|PROSPECT_BUSINESSES|GENERAL_QUERY",
+        "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|ATTACH_LIST_TO_LISTING|COMBINED_LIST_CREATION_AND_ATTACHMENT|COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT|PROSPECT_BUSINESSES|FILTER_CONTACTS|GENERAL_QUERY",
   "confidence": 0.0-1.0,
   "extractedData": {
     "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
@@ -289,7 +311,9 @@ Analyze the following user request and respond with ONLY a JSON object in this e
     "listIdentifier": "name of the list to attach (if attaching list to listing)",
     "listingIdentifier": "name or address of the listing to attach to (if attaching list to listing)",
     "businessCategory": "type of business to search for (if prospecting businesses)",
-    "location": "location to search in (if prospecting businesses)"
+    "location": "location to search in (if prospecting businesses)",
+    "filterCriteria": "the criteria to filter contacts by (if filtering contacts)",
+    "filterField": "businessSector|company|address (the field to search in)"
   },
   "userMessage": "A friendly response explaining what you understood they want to do"
 }
@@ -427,6 +451,11 @@ Respond with ONLY the JSON object, no other text.`;
         case 'PROSPECT_BUSINESSES':
           logger.info('🔧 Handling PROSPECT_BUSINESSES...');
           result = await handleBusinessProspecting(intentAnalysis.extractedData, command);
+          break;
+          
+        case 'FILTER_CONTACTS':
+          logger.info('🔧 Handling FILTER_CONTACTS...');
+          result = await handleContactFiltering(intentAnalysis.extractedData, command);
           break;
           
         case 'GENERAL_QUERY':
@@ -2007,6 +2036,130 @@ async function handleBusinessProspecting(extractedData, originalCommand) {
       success: false,
       error: 'Failed to process business prospecting request',
       details: 'Business prospecting processing failed'
+    };
+  }
+}
+
+// Helper function to handle contact filtering
+async function handleContactFiltering(extractedData, originalCommand) {
+  try {
+    const { filterCriteria, filterField } = extractedData;
+    
+    logger.info('🔍 Contact Filtering Request:', { filterCriteria, filterField, originalCommand });
+
+    // Validate required fields
+    if (!filterCriteria) {
+      return {
+        success: false,
+        error: 'Missing filter criteria. Please specify what you want to filter contacts by.',
+        details: 'filterCriteria is required for contact filtering',
+        suggestion: 'Try: "show me contacts with financial services"'
+      };
+    }
+
+    // Determine which field to search based on AI analysis or fallback to smart detection
+    let searchField = filterField;
+    if (!searchField) {
+      // Smart field detection (fallback)
+      const term = filterCriteria.toLowerCase();
+      
+      // Business sector keywords
+      const businessSectorKeywords = [
+        'financial', 'finance', 'banking', 'insurance', 'real estate', 'healthcare', 'medical', 'dental',
+        'legal', 'law', 'technology', 'tech', 'software', 'consulting', 'retail', 'restaurant', 'food',
+        'automotive', 'auto', 'construction', 'manufacturing', 'education', 'school', 'university',
+        'government', 'nonprofit', 'charity', 'marketing', 'advertising', 'media', 'entertainment', 'investor'
+      ];
+      
+      // Location keywords
+      const locationKeywords = [
+        'pittsburgh', 'mt. lebanon', 'bethel park', 'bridgeville', 'south hills', 'north hills',
+        'east end', 'west end', 'downtown', 'oakland', 'shadyside', 'squirrel hill', 'lawrenceville',
+        'strip district', 'south side', 'north side', 'east liberty', 'bloomfield', 'garfield'
+      ];
+      
+      if (businessSectorKeywords.some(keyword => term.includes(keyword))) {
+        searchField = 'businessSector';
+      } else if (locationKeywords.some(keyword => term.includes(keyword))) {
+        searchField = 'address';
+      } else {
+        searchField = 'company'; // Default to company search
+      }
+    }
+
+    // Query contacts from Firestore
+    const contactsRef = db.collection('contacts');
+    const snapshot = await contactsRef.get();
+    
+    if (snapshot.empty) {
+      return {
+        success: false,
+        error: 'No contacts found in the database.',
+        details: 'Database is empty'
+      };
+    }
+
+    // Filter contacts based on criteria
+    const searchTerm = filterCriteria.toLowerCase();
+    const filteredContacts = [];
+    
+    snapshot.forEach(doc => {
+      const contactData = doc.data();
+      const fieldValue = (contactData[searchField] || '').toLowerCase();
+      
+      if (fieldValue.includes(searchTerm)) {
+        filteredContacts.push({
+          id: doc.id,
+          data: contactData
+        });
+      }
+    });
+
+    if (filteredContacts.length === 0) {
+      return {
+        success: false,
+        error: `No contacts found matching "${filterCriteria}" in ${searchField === 'businessSector' ? 'business sector' : searchField === 'address' ? 'address' : 'company'}.`,
+        details: 'No matching contacts found',
+        searchField: searchField,
+        filterCriteria: filterCriteria
+      };
+    }
+
+    // Format the response
+    const contacts = filteredContacts.map(contact => ({
+      id: contact.id,
+      firstName: contact.data.firstName || '',
+      lastName: contact.data.lastName || '',
+      email: contact.data.email || '',
+      phone: contact.data.phone || '',
+      company: contact.data.company || '',
+      address: contact.data.address || '',
+      businessSector: contact.data.businessSector || '',
+      linkedin: contact.data.linkedin || '',
+      notes: contact.data.notes || ''
+    }));
+
+    return {
+      success: true,
+      message: `Found ${contacts.length} contact${contacts.length !== 1 ? 's' : ''} matching "${filterCriteria}"`,
+      action: 'filter_contacts',
+      data: {
+        contacts: contacts,
+        searchField: searchField,
+        filterCriteria: filterCriteria,
+        totalFound: contacts.length
+      },
+      searchField: searchField,
+      filterCriteria: filterCriteria,
+      contactsFound: contacts.length
+    };
+
+  } catch (error) {
+    logger.error('❌ Error in contact filtering:', error);
+    return {
+      success: false,
+      error: 'Failed to process contact filtering request',
+      details: 'Contact filtering processing failed'
     };
   }
 }

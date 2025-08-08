@@ -91,7 +91,92 @@ const isShowListsCommand = (msg) => {
   return phrases.some(p => lower.includes(p));
 };
 
-const ChatBox = ({ onShowLists }) => {
+const isShowContactCommand = (msg) => {
+  const patterns = [
+    /^show me (.+)$/i,
+    /^show (.+)$/i,
+    /^display (.+)$/i,
+    /^find (.+)$/i,
+    /^look up (.+)$/i,
+    /^get (.+)$/i,
+  ];
+  
+  const lower = msg.toLowerCase();
+  
+  // Check if it matches any of the patterns
+  for (const pattern of patterns) {
+    const match = msg.match(pattern);
+    if (match) {
+      const contactName = match[1].trim();
+      // Make sure it's not a list command or contacts with command
+      if (!lower.includes('list') && !lower.includes('lists') && !lower.includes('contacts with')) {
+        return { isCommand: true, contactName };
+      }
+    }
+  }
+  
+  return { isCommand: false, contactName: null };
+};
+
+const isShowContactsWithCommand = (msg) => {
+  const patterns = [
+    /^show me contacts with (.+)$/i,
+    /^show contacts with (.+)$/i,
+    /^display contacts with (.+)$/i,
+    /^find contacts with (.+)$/i,
+    /^get contacts with (.+)$/i,
+    /^contacts with (.+)$/i,
+    // More specific patterns to avoid conflicts with list creation
+    /^show me all contacts with (.+)$/i,
+    /^find all contacts with (.+)$/i,
+    /^get all contacts with (.+)$/i,
+    /^display all contacts with (.+)$/i,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = msg.match(pattern);
+    if (match) {
+      const searchCriteria = match[1].trim();
+      return { isCommand: true, searchCriteria };
+    }
+  }
+  
+  return { isCommand: false, searchCriteria: null };
+};
+
+const analyzeSearchField = (searchTerm) => {
+  const term = searchTerm.toLowerCase();
+  
+  // Business sector keywords
+  const businessSectorKeywords = [
+    'financial', 'finance', 'banking', 'insurance', 'real estate', 'healthcare', 'medical', 'dental',
+    'legal', 'law', 'technology', 'tech', 'software', 'consulting', 'retail', 'restaurant', 'food',
+    'automotive', 'auto', 'construction', 'manufacturing', 'education', 'school', 'university',
+    'government', 'nonprofit', 'charity', 'marketing', 'advertising', 'media', 'entertainment'
+  ];
+  
+  // Location keywords
+  const locationKeywords = [
+    'pittsburgh', 'mt. lebanon', 'bethel park', 'bridgeville', 'south hills', 'north hills',
+    'east end', 'west end', 'downtown', 'oakland', 'shadyside', 'squirrel hill', 'lawrenceville',
+    'strip district', 'south side', 'north side', 'east liberty', 'bloomfield', 'garfield'
+  ];
+  
+  // Check if it's a business sector
+  if (businessSectorKeywords.some(keyword => term.includes(keyword))) {
+    return 'businessSector';
+  }
+  
+  // Check if it's a location
+  if (locationKeywords.some(keyword => term.includes(keyword))) {
+    return 'address';
+  }
+  
+  // Default to company search (most common for business names)
+  return 'company';
+};
+
+const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContactDetail }) => {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -100,6 +185,8 @@ const ChatBox = ({ onShowLists }) => {
   const [showAbout, setShowAbout] = useState(false);
   const [showBusinessResults, setShowBusinessResults] = useState(false);
   const [businessResults, setBusinessResults] = useState(null);
+  const [showContactFilterResults, setShowContactFilterResults] = useState(false);
+  const [contactFilterResults, setContactFilterResults] = useState(null);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -124,6 +211,20 @@ const ChatBox = ({ onShowLists }) => {
     };
   }, []);
 
+  // Listen for contact filter results events
+  useEffect(() => {
+    const handleContactFilterResults = (event) => {
+      setContactFilterResults(event.detail);
+      setShowContactFilterResults(true);
+    };
+
+    window.addEventListener('showContactFilterResults', handleContactFilterResults);
+    
+    return () => {
+      window.removeEventListener('showContactFilterResults', handleContactFilterResults);
+    };
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     
@@ -139,6 +240,18 @@ const ChatBox = ({ onShowLists }) => {
       setLastActionType('show_lists');
       return;
     }
+
+    // Detect "show me [contact name]" and open contact modal
+    const contactCommand = isShowContactCommand(message);
+    if (contactCommand.isCommand) {
+      if (onShowContact) onShowContact(contactCommand.contactName);
+      setMessage('');
+      setLastActionType('show_contact');
+      return;
+    }
+
+    // Note: Contact filtering is now handled by the AI endpoint
+    // The command detection is kept for fallback but will be processed by AI
 
     // Store the message content before clearing the input
     const currentMessage = message;
@@ -166,7 +279,6 @@ const ChatBox = ({ onShowLists }) => {
       // Debug: Log which command type is detected
       const isCombinedList = isCombinedListCreationAndAttachmentCommand(currentMessage);
       const isCombinedActivity = isCombinedActivityCreationAndListingAttachmentCommand(currentMessage);
-      const isList = isListCreationCommand(currentMessage);
       const isContact = isContactActionCommand(currentMessage);
       const isBusinessProspecting = isBusinessProspectingCommand(currentMessage);
       const isTaskCreation = isTaskCreationCommand(currentMessage);
@@ -174,7 +286,6 @@ const ChatBox = ({ onShowLists }) => {
         message: currentMessage,
         isCombinedListCreationAndAttachment: isCombinedList,
         isCombinedActivityCreationAndListingAttachment: isCombinedActivity,
-        isListCreation: isList,
         isContactAction: isContact,
         isBusinessProspecting: isBusinessProspecting,
         isTaskCreation: isTaskCreation
@@ -252,29 +363,57 @@ const ChatBox = ({ onShowLists }) => {
           throw new Error(result.error);
         }
       }
-      // Check if this is a list creation command
-      else if (isList) {
-        console.log('📋 Routing to List Creation endpoint');
-        // Use AI List Creation endpoint
-        const result = await processListCreation(currentMessage);
+      // Check if this is a contact action command (includes contact filtering) - HIGHEST PRIORITY
+      else if (isContact) {
+        console.log('👤 Routing to Contact Action endpoint');
+        // Use AI Contact Actions endpoint
+        const result = await processContactAction(currentMessage);
         
         if (result.success) {
-          responseText = `${result.message}\n\nList Details:\n- Name: ${result.listName}\n- Contacts: ${result.contactCount}\n- ID: ${result.listId}`;
+          responseText = result.message;
           
-          // Add contact details if available
-          if (result.contacts && result.contacts.length > 0) {
-            responseText += '\n\nContacts in list:\n';
-            result.contacts.forEach((contact, index) => {
-              responseText += `${index + 1}. ${contact.name} (${contact.email || 'No email'}) - ${contact.company || 'No company'}\n`;
-            });
+          // Check if this is a contact filtering response
+          if (result.action === 'filter_contacts') {
+            actionType = 'filter_contacts';
+            console.log('🔍 Contact filtering response detected:', result);
+            
+            // Store contact data for modal display
+            // The contacts are nested in result.data.data.contacts
+            const contacts = result.data?.data?.contacts || result.data?.contacts;
+            if (contacts && contacts.length > 0) {
+              console.log('🔍 Triggering contact filtering modal with', contacts.length, 'contacts');
+              
+              // Set state for contact filtering results
+              setContactFilterResults({
+                contacts: contacts,
+                searchField: result.data.searchField || result.searchField,
+                filterCriteria: result.data.filterCriteria || result.filterCriteria,
+                totalFound: result.data.totalFound || result.contactsFound
+              });
+              setShowContactFilterResults(true);
+              
+              // Note: Removed call to old modal system since our new AI-powered modal is working correctly
+            }
+          } else {
+            actionType = 'contact_action';
           }
           
-          actionType = 'list_creation';
+          // If this was an activity creation, emit a custom event
+          if (result.data && result.data.action === 'create_activity') {
+            console.log('🎯 AI Activity created, dispatching refresh event');
+            window.dispatchEvent(new CustomEvent('aiActivityCreated', {
+              detail: {
+                contactId: result.data.contactId,
+                activityType: result.data.activityType,
+                activityId: result.data.activityId
+              }
+            }));
+          }
         } else {
           throw new Error(result.error);
         }
       }
-      // Check if this is a business prospecting command
+      // Check if this is a business prospecting command (after contact actions)
       else if (isBusinessProspecting) {
         console.log('🏢 Routing to Business Prospecting endpoint');
         const result = await processBusinessProspecting(currentMessage);
@@ -338,40 +477,6 @@ const ChatBox = ({ onShowLists }) => {
           }
           
           actionType = 'task_creation';
-        } else {
-          throw new Error(result.error);
-        }
-      }
-      // Check if this is a contact action command
-      else if (isContact) {
-        console.log('👤 Routing to Contact Action endpoint');
-        // Use AI Contact Actions endpoint
-        const result = await processContactAction(currentMessage);
-        
-        if (result.success) {
-          responseText = result.message;
-          actionType = 'contact_action';
-          
-          // If this was an activity creation, emit a custom event
-          if (result.data && result.data.action === 'create_activity') {
-            console.log('🎯 AI Activity created, dispatching refresh event');
-            window.dispatchEvent(new CustomEvent('aiActivityCreated', {
-              detail: {
-                contactId: result.data.contactId,
-                activityType: result.data.activityType,
-                activityId: result.data.activityId
-              }
-            }));
-          } else if (result.action === 'create_activity') {
-            console.log('🎯 AI Activity created, dispatching refresh event (direct action)');
-            window.dispatchEvent(new CustomEvent('aiActivityCreated', {
-              detail: {
-                contactId: result.contactId,
-                activityType: result.activityType,
-                activityId: result.activityId
-              }
-            }));
-          }
         } else {
           throw new Error(result.error);
         }
@@ -500,7 +605,10 @@ const ChatBox = ({ onShowLists }) => {
                     {msg.actionType === 'contact_action' ? 'AI Contact Management' : 
                      msg.actionType === 'list_creation' ? 'AI List Creation' : 
                      msg.actionType === 'business_prospecting' ? 'Business Prospecting' :
-                     msg.actionType === 'show_lists' ? 'Contact Lists' : 'AI Action'}
+                     msg.actionType === 'show_lists' ? 'Contact Lists' :
+                     msg.actionType === 'show_contact' ? 'Contact Display' :
+                     msg.actionType === 'show_contacts_with' ? 'Contact Filtering' :
+                     msg.actionType === 'filter_contacts' ? 'AI Contact Filtering' : 'AI Action'}
                   </span>
                 )}
                 <span style={styles.messageTime}>
@@ -601,6 +709,24 @@ const ChatBox = ({ onShowLists }) => {
                 <li><strong>Generate List:</strong> "generate list of [criteria]"</li>
               </ul>
               
+              <h3 style={styles.sectionTitle}>👤 Contact Display</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Show Contact:</strong> "show me [name]"</li>
+                <li><strong>Display Contact:</strong> "display [name]"</li>
+                <li><strong>Find Contact:</strong> "find [name]"</li>
+                <li><strong>Look Up Contact:</strong> "look up [name]"</li>
+                <li><strong>Get Contact:</strong> "get [name]"</li>
+                <li><strong>Examples:</strong> "show me Elodie Wren", "find John Smith"</li>
+              </ul>
+              
+              <h3 style={styles.sectionTitle}>🔍 Contact Filtering</h3>
+              <ul style={styles.commandList} className="command-list">
+                <li><strong>Filter by Sector:</strong> "show me contacts with financial services"</li>
+                <li><strong>Filter by Location:</strong> "show me contacts with Pittsburgh"</li>
+                <li><strong>Filter by Company:</strong> "show me contacts with ABC Corp"</li>
+                <li><strong>Examples:</strong> "contacts with healthcare", "find contacts with tech"</li>
+              </ul>
+              
               <h3 style={styles.sectionTitle}>📊 Contact Lists</h3>
               <ul style={styles.commandList} className="command-list">
                 <li><strong>Show Lists:</strong> "show me my lists"</li>
@@ -692,6 +818,51 @@ const ChatBox = ({ onShowLists }) => {
                     {business.rating && <p style={styles.businessRating}>⭐ {business.rating}/5</p>}
                     <p style={styles.businessSearchTerm}>Found via: {business.search_term}</p>
                   </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contact Filter Results Modal */}
+      {showContactFilterResults && contactFilterResults && (
+        <div style={styles.modalOverlay} onClick={() => setShowContactFilterResults(false)}>
+          <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>🔍 Contact Filter Results</h2>
+              <button 
+                onClick={() => setShowContactFilterResults(false)}
+                style={styles.closeButton}
+                className="close-button"
+              >
+                ×
+              </button>
+            </div>
+            <div style={styles.modalBody}>
+              <div style={styles.businessResultsHeader}>
+                <p><strong>Search Criteria:</strong> {contactFilterResults.filterCriteria}</p>
+                <p><strong>Search Field:</strong> {contactFilterResults.searchField}</p>
+                <p><strong>Contacts Found:</strong> {contactFilterResults.totalFound}</p>
+              </div>
+              
+              <div style={styles.businessesContainer}>
+                {contactFilterResults.contacts.map((contact, index) => (
+                  <button
+                    key={contact.id}
+                    className="contact-card-button"
+                    style={styles.businessCard}
+                    onClick={() => {
+                      if (onShowContactDetail) onShowContactDetail(contact);
+                    }}
+                  >
+                    <h4 style={styles.businessName}>{contact.firstName} {contact.lastName}</h4>
+                    <p style={styles.businessAddress}>{contact.email}</p>
+                    {contact.phone && <p style={styles.businessPhone}>📞 {contact.phone}</p>}
+                    {contact.company && <p style={styles.businessAddress}>🏢 {contact.company}</p>}
+                    {contact.businessSector && <p style={styles.businessSearchTerm}>💼 {contact.businessSector}</p>}
+                    {contact.address && <p style={styles.businessAddress}>📍 {contact.address}</p>}
+                  </button>
                 ))}
               </div>
             </div>
@@ -1001,6 +1172,11 @@ const styles = {
     borderRadius: '8px',
     padding: '15px',
     boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    textAlign: 'left',
+    width: '100%',
+    fontFamily: 'Georgia, serif',
   },
   businessName: {
     margin: '0 0 8px 0',
@@ -1090,6 +1266,18 @@ styleSheet.textContent = `
   .close-button:hover {
     background-color: rgba(0, 0, 0, 0.1);
     color: #333;
+  }
+  
+  /* Soft hover effect for contact cards */
+  .contact-card-button:hover {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    transform: translateY(-2px) !important;
+  }
+  
+  .contact-card-button:active {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
   }
   
   .command-list li {

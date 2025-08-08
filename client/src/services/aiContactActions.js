@@ -118,6 +118,16 @@ export function isContactActionCommand(message) {
     /discussed.*with/i
   ];
   
+  // Contact filtering patterns (HIGHEST PRIORITY)
+  const contactFilteringPatterns = [
+    /^show\s+me\s+all\s+contacts\s+with/i,
+    /^show\s+me\s+contacts\s+with/i,
+    /^find\s+contacts\s+with/i,
+    /^display\s+contacts\s+with/i,
+    /^get\s+contacts\s+with/i,
+    /^contacts\s+with/i
+  ];
+  
   // Secondary keywords that indicate contact actions when combined with primary
   const secondaryKeywords = [
     'phone', 'email', 'address', 'company', 'name',
@@ -126,7 +136,12 @@ export function isContactActionCommand(message) {
   
   const lowerMessage = message.toLowerCase();
   
-  // Check for activity patterns first (these are high priority)
+  // Check for contact filtering patterns first (HIGHEST PRIORITY)
+  if (contactFilteringPatterns.some(pattern => pattern.test(message))) {
+    return true;
+  }
+  
+  // Check for activity patterns (these are high priority)
   if (activityPatterns.some(pattern => pattern.test(message))) {
     return true;
   }
@@ -172,7 +187,7 @@ export function isListCreationCommand(message) {
     /^build\s+(?!.*task).*list/i,   // build list but NOT build task
     /^generate\s+(?!.*task).*list/i, // generate list but NOT generate task
     /^list\s+of.*/i,                // list of (at start)
-    /^show\s+me.*/i,                // show me (at start)
+    // Removed "show me" pattern - now handled by contact actions for filtering
     /^find\s+all.*/i,               // find all (at start)
     /^get\s+all.*/i,                // get all (at start)
     /contacts\s+with.*/i,           // contacts with
@@ -356,16 +371,22 @@ export async function processCombinedListCreationAndAttachment(message) {
  */
 export async function processContactAction(message) {
   try {
+    console.log('🔄 Processing contact action command:', message);
+    
     const result = await handleAIContactAction(message);
+    
+    console.log('🔍 Contact Action Response:', result);
     
     // Standardize response format
     return {
       success: true,
       data: result,
       message: result.response || result.message || result.text || 'Action completed successfully',
-      type: result.type || 'contact_action'
+      type: result.type || 'contact_action',
+      action: result.action // Preserve the action field for filtering
     };
   } catch (error) {
+    console.error('❌ Contact Action Error:', error);
     return {
       success: false,
       error: error.message,
@@ -429,7 +450,7 @@ export function isBusinessProspectingCommand(message) {
   
   const lowerMessage = message.toLowerCase();
   
-  // Check for business prospecting patterns
+  // Check for business prospecting patterns (MUST include business/company keywords)
   const prospectingPatterns = [
     /find.*businesses?.*in/i,
     /search.*for.*businesses?.*in/i,
@@ -439,15 +460,28 @@ export function isBusinessProspectingCommand(message) {
     /search.*for.*companies?.*in/i,
     /prospect.*companies?.*in/i,
     /locate.*companies?.*in/i,
-    /find.*\w+.*in/i,
-    /search.*for.*\w+.*in/i,
-    /prospect.*\w+.*in/i,
-    /locate.*\w+.*in/i
+    /find.*\w+.*businesses?.*in/i,
+    /search.*for.*\w+.*businesses?.*in/i,
+    /prospect.*\w+.*businesses?.*in/i,
+    /locate.*\w+.*businesses?.*in/i
   ];
   
   // Check for specific patterns first
   if (prospectingPatterns.some(pattern => pattern.test(message))) {
     return true;
+  }
+  
+  // EXCLUDE contact filtering commands first
+  const contactFilteringPatterns = [
+    /show.*me.*contacts.*with/i,
+    /find.*contacts.*with/i,
+    /display.*contacts.*with/i,
+    /get.*contacts.*with/i,
+    /contacts.*with/i
+  ];
+  
+  if (contactFilteringPatterns.some(pattern => pattern.test(message))) {
+    return false; // This is contact filtering, not business prospecting
   }
   
   // Check for keywords that indicate business prospecting
