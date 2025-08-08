@@ -688,12 +688,30 @@ const ContactModal = ({ open, onClose, contact, mode = 'view', onSave }) => {
           </h2>
           <div style={styles.content}>
             {/* Address */}
-            <ModalField
-              label="Address"
-              value={editContact.address || ''}
-              mode={mode}
-              onChange={v => handleChange('address', v)}
-            />
+            <div style={fieldStyles.fieldRow}>
+              <label style={fieldStyles.label}>Address:</label>
+              {mode === 'edit' ? (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  <input
+                    style={fieldStyles.input}
+                    value={editContact.address || ''}
+                    onChange={e => handleChange('address', e.target.value)}
+                    placeholder="street, city, state, zip"
+                  />
+                  <div style={{
+                    fontSize: '0.8rem',
+                    color: '#666',
+                    marginTop: '4px',
+                    fontStyle: 'italic',
+                    fontFamily: 'Georgia, serif'
+                  }}>
+                    format: street, city, state, zip
+                  </div>
+                </div>
+              ) : (
+                <span style={fieldStyles.value}>{editContact.address && editContact.address.trim() ? editContact.address : '(Not specified)'}</span>
+              )}
+            </div>
             {/* Business Sector */}
             {mode === 'edit' ? (
               <div style={fieldStyles.fieldRow}>

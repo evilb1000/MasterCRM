@@ -127,7 +127,7 @@ export const chat = onRequest(
 
 // AI Contact Action function
 export const aiContactAction = onRequest(
-  { secrets: [openaiApiSecret] },
+  { secrets: [openaiApiSecret, googleApiSecret] },
   async (req, res) => {
     // Enable CORS
     res.set('Access-Control-Allow-Origin', '*');
@@ -1298,6 +1298,42 @@ async function handleCreateActivity(extractedData, originalCommand) {
   }
 }
 
+// Helper function to geocode an address
+async function geocodeAddress(address) {
+  try {
+    if (!address || !address.trim()) {
+      return null;
+    }
+    
+    logger.info(`🗺️ Geocoding address: ${address}`);
+    
+    // Get the API key
+    const apiKey = googleApiSecret.value();
+    logger.info(`🗺️ API Key length: ${apiKey ? apiKey.length : 'undefined'}`);
+    
+    // Format address for geocoding (add PA if not present)
+    const formattedAddress = address.includes(', PA') ? address : `${address}, PA`;
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(formattedAddress)}&key=${apiKey}`;
+    
+    logger.info(`🗺️ Geocoding URL (without key): https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(formattedAddress)}&key=***`);
+    
+    const response = await fetch(geocodeUrl);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.results[0]) {
+      const { lat, lng } = data.results[0].geometry.location;
+      logger.info(`✅ Geocoded successfully: ${lat}, ${lng}`);
+      return { lat, lng };
+    } else {
+      logger.warn(`⚠️ Geocoding failed for "${address}": ${data.status} - ${data.error_message || 'Unknown error'}`);
+      return null;
+    }
+  } catch (error) {
+    logger.error(`❌ Error geocoding "${address}":`, error.message);
+    return null;
+  }
+}
+
 // Helper function to handle contact creation
 async function handleContactCreation(extractedData, originalCommand) {
   logger.info('🔍 Contact Creation Debug:', extractedData);
@@ -1376,6 +1412,32 @@ async function handleContactCreation(extractedData, originalCommand) {
   try {
     const contactRef = await db.collection('contacts').add(contactData);
     logger.info('✅ Contact created successfully with ID:', contactRef.id);
+
+    // Geocode the address if provided
+    if (contactData.address && contactData.address.trim()) {
+      logger.info(`🗺️ Attempting to geocode address: "${contactData.address.trim()}"`);
+      try {
+        const coordinates = await geocodeAddress(contactData.address.trim());
+        logger.info(`🗺️ Geocoding result:`, coordinates);
+        if (coordinates) {
+          // Update the contact with coordinates
+          await contactRef.update({
+            latitude: coordinates.lat,
+            longitude: coordinates.lng,
+            geocodedAt: new Date()
+          });
+          logger.info(`✅ Contact geocoded successfully: ${coordinates.lat}, ${coordinates.lng}`);
+        } else {
+          logger.warn('⚠️ Geocoding returned null/undefined coordinates');
+        }
+      } catch (geocodeError) {
+        logger.error('❌ Geocoding error:', geocodeError);
+        logger.warn('⚠️ Geocoding failed, but contact was created:', geocodeError.message);
+        // Don't fail the contact creation if geocoding fails
+      }
+    } else {
+      logger.info('ℹ️ No address provided, skipping geocoding');
+    }
 
     // Log the action
     await logAction(originalCommand, 'create', contactRef.id, contactData, null, null);
@@ -2839,6 +2901,75 @@ export const helloWorld = onRequest(
   { memory: "256MiB" },
   (req, res) => {
     res.send("Hello from Firebase!");
+  }
+);
+
+// Geocode Address Function
+export const geocodeAddressEndpoint = onRequest(
+  { secrets: [googleApiSecret] },
+  async (req, res) => {
+    // Enable CORS
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'GET, POST');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
+    }
+
+    // Only allow POST requests
+    if (req.method !== 'POST') {
+      res.status(405).json({ error: 'Method not allowed. Use POST.' });
+      return;
+    }
+
+    try {
+      const { address } = req.body;
+
+      // Validate input
+      if (!address) {
+        return res.status(400).json({
+          error: 'Address is required'
+        });
+      }
+
+      logger.info('🗺️ Geocode Address Request:', { address });
+
+      // Get API key
+      const googleApiKey = googleApiSecret.value();
+
+      if (!googleApiKey) {
+        logger.error('❌ Google API key not configured');
+        return res.status(500).json({
+          error: 'Google API key not configured.'
+        });
+      }
+
+      // Call the geocoding function
+      const coordinates = await geocodeAddress(address);
+
+      if (coordinates) {
+        res.json({
+          success: true,
+          coordinates: coordinates
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: 'Failed to geocode address',
+          details: 'Address not found or invalid'
+        });
+      }
+
+    } catch (error) {
+      logger.error('❌ Error in geocodeAddress function:', error);
+      res.status(500).json({
+        error: 'Failed to geocode address',
+        details: error.message
+      });
+    }
   }
 );
 

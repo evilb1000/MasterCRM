@@ -799,6 +799,36 @@ async function handleCreateActivity(extractedData, originalCommand) {
   }
 }
 
+// Helper function to geocode an address
+async function geocodeAddress(address) {
+  try {
+    if (!address || !address.trim()) {
+      return null;
+    }
+    
+    console.log(`🗺️ Geocoding address: ${address}`);
+    
+    // Format address for geocoding (add PA if not present)
+    const formattedAddress = address.includes(', PA') ? address : `${address}, PA`;
+    const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(formattedAddress)}&key=${process.env.GOOGLE_API_KEY}`;
+    
+    const response = await fetch(geocodeUrl);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.results[0]) {
+      const { lat, lng } = data.results[0].geometry.location;
+      console.log(`✅ Geocoded successfully: ${lat}, ${lng}`);
+      return { lat, lng };
+    } else {
+      console.log(`⚠️ Geocoding failed for "${address}": ${data.status} - ${data.error_message || 'Unknown error'}`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`❌ Error geocoding "${address}":`, error.message);
+    return null;
+  }
+}
+
 // Helper function to handle contact creation
 async function handleContactCreation(extractedData, originalCommand) {
   console.log('🔍 Contact Creation Debug:', extractedData);
@@ -877,6 +907,25 @@ async function handleContactCreation(extractedData, originalCommand) {
   try {
     const contactRef = await db.collection('contacts').add(contactData);
     console.log('✅ Contact created successfully with ID:', contactRef.id);
+
+    // Geocode the address if provided
+    if (contactData.address && contactData.address.trim()) {
+      try {
+        const coordinates = await geocodeAddress(contactData.address.trim());
+        if (coordinates) {
+          // Update the contact with coordinates
+          await contactRef.update({
+            latitude: coordinates.lat,
+            longitude: coordinates.lng,
+            geocodedAt: new Date()
+          });
+          console.log(`✅ Contact geocoded successfully: ${coordinates.lat}, ${coordinates.lng}`);
+        }
+      } catch (geocodeError) {
+        console.warn('⚠️ Geocoding failed, but contact was created:', geocodeError.message);
+        // Don't fail the contact creation if geocoding fails
+      }
+    }
 
     // Log the action
     await logAction(originalCommand, 'create', contactRef.id, contactData, null, null);

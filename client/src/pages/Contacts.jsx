@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, getDocs, query, orderBy, updateDoc, doc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, updateDoc, doc, addDoc, serverTimestamp, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import app from '../firebase';
 import axios from 'axios';
@@ -209,6 +209,29 @@ const Contacts = () => {
       // Remove the name field before saving (it's derived)
       const { name, ...contactData } = updatedContact;
       await updateDoc(contactRef, contactData);
+
+      // Geocode the address if it was updated and provided
+      if (contactData.address && contactData.address.trim()) {
+        try {
+          const response = await axios.post('https://us-central1-lod-crm-systems.cloudfunctions.net/geocodeAddressEndpoint', {
+            address: contactData.address.trim()
+          });
+
+          if (response.data.success && response.data.coordinates) {
+            // Update the contact with coordinates
+            await updateDoc(contactRef, {
+              latitude: response.data.coordinates.lat,
+              longitude: response.data.coordinates.lng,
+              geocodedAt: serverTimestamp()
+            });
+            console.log(`✅ Contact geocoded successfully: ${response.data.coordinates.lat}, ${response.data.coordinates.lng}`);
+          }
+        } catch (geocodeError) {
+          console.warn('⚠️ Geocoding failed, but contact was updated:', geocodeError.message);
+          // Don't fail the contact update if geocoding fails
+        }
+      }
+
       setContacts(prevContacts =>
         prevContacts.map(c => {
           if (c.id === updatedContact.id) {
@@ -275,6 +298,30 @@ const Contacts = () => {
   const handleAddTask = (contact) => {
     setSelectedContactForTask(contact);
     setShowAddTaskModal(true);
+  };
+
+  const handleDeleteContact = async (contact) => {
+    if (!window.confirm(`Are you sure you want to delete ${contact.firstName} ${contact.lastName}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const contactRef = doc(db, 'contacts', contact.id);
+      await deleteDoc(contactRef);
+      
+      // Remove from local state
+      setContacts(prevContacts => prevContacts.filter(c => c.id !== contact.id));
+      
+      // Close modal if it's open for this contact
+      if (modalContact && modalContact.id === contact.id) {
+        setModalOpen(false);
+        setModalContact(null);
+      }
+      
+      alert(`Contact ${contact.firstName} ${contact.lastName} deleted successfully`);
+    } catch (err) {
+      alert('Failed to delete contact: ' + err.message);
+    }
   };
 
   const handleSaveList = async ({ name, contactIds, connectToListing, selectedListing }) => {
@@ -576,6 +623,7 @@ const Contacts = () => {
                         <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleOpenModal(contact, 'view'); }}>Details</button>
                         <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleOpenActivityModal(contact); }}>Add Activity</button>
                         <button style={styles.actionButton} onClick={e => { e.stopPropagation(); handleAddTask(contact); }}>Add Task</button>
+                        <button style={styles.deleteButton} onClick={e => { e.stopPropagation(); handleDeleteContact(contact); }}>Delete</button>
                       </div>
                     </div>
                   );
@@ -796,6 +844,20 @@ const styles = {
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     color: '#ffffff',
     border: '1px solid rgba(255, 255, 255, 0.2)',
+    padding: '8px 16px',
+    fontSize: '12px',
+    fontWeight: '400',
+    cursor: 'pointer',
+    borderRadius: '6px',
+    transition: 'all 0.3s ease',
+    fontFamily: 'Georgia, serif',
+    backdropFilter: 'blur(10px)',
+    WebkitBackdropFilter: 'blur(10px)',
+  },
+  deleteButton: {
+    backgroundColor: 'rgba(220, 53, 69, 0.9)',
+    color: '#ffffff',
+    border: '1px solid rgba(220, 53, 69, 0.3)',
     padding: '8px 16px',
     fontSize: '12px',
     fontWeight: '400',

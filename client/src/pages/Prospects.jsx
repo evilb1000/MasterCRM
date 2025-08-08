@@ -95,6 +95,28 @@ const Prospects = () => {
         updatedAt: serverTimestamp()
       });
 
+      // Geocode the address if provided
+      if (contactData.address && contactData.address.trim()) {
+        try {
+          const response = await axios.post('https://us-central1-lod-crm-systems.cloudfunctions.net/geocodeAddressEndpoint', {
+            address: contactData.address.trim()
+          });
+
+          if (response.data.success && response.data.coordinates) {
+            // Update the contact with coordinates
+            await updateDoc(contactRef, {
+              latitude: response.data.coordinates.lat,
+              longitude: response.data.coordinates.lng,
+              geocodedAt: serverTimestamp()
+            });
+            console.log(`✅ Contact geocoded successfully: ${response.data.coordinates.lat}, ${response.data.coordinates.lng}`);
+          }
+        } catch (geocodeError) {
+          console.warn('⚠️ Geocoding failed, but contact was created:', geocodeError.message);
+          // Don't fail the contact creation if geocoding fails
+        }
+      }
+
       // Remove business from prospect search
       const updatedBusinesses = selectedSearch.businesses.filter(
         b => b.place_id !== selectedBusiness.place_id
