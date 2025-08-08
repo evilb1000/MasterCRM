@@ -283,13 +283,14 @@ Contact identification can be by:
 - Company name
 - Partial name matching (e.g., "Jeff" matches "Jeff Burd")
 
-Analyze the following user request and respond with ONLY a JSON object in this exact format:
+You are an intelligent CRM assistant that understands the context and intent of user requests. Analyze the following user request and respond with ONLY a JSON object in this exact format:
+
 {
-        "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|ATTACH_LIST_TO_LISTING|COMBINED_LIST_CREATION_AND_ATTACHMENT|COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT|PROSPECT_BUSINESSES|FILTER_CONTACTS|GENERAL_QUERY",
+  "intent": "UPDATE_CONTACT|ADD_NOTE|CREATE_ACTIVITY|CREATE_CONTACT|DELETE_CONTACT|SEARCH_CONTACT|LIST_CONTACTS|CREATE_LIST|ATTACH_LIST_TO_LISTING|COMBINED_LIST_CREATION_AND_ATTACHMENT|COMBINED_ACTIVITY_CREATION_AND_LISTING_ATTACHMENT|PROSPECT_BUSINESSES|FILTER_CONTACTS|GENERAL_QUERY",
   "confidence": 0.0-1.0,
   "extractedData": {
     "contactIdentifier": "email or firstName+lastName or company (if mentioned)",
-          "action": "update|add_note|create_activity|create|delete|search|list|create_list|attach_list_to_listing|combined_activity_creation_and_listing_attachment",
+    "action": "update|add_note|create_activity|create|delete|search|list|create_list|attach_list_to_listing|combined_activity_creation_and_listing_attachment",
     "field": "fieldName (if mentioned)",
     "value": "new value (if mentioned)",
     "firstName": "first name (if creating contact)",
@@ -317,6 +318,36 @@ Analyze the following user request and respond with ONLY a JSON object in this e
   },
   "userMessage": "A friendly response explaining what you understood they want to do"
 }
+
+CRITICAL CONTEXT UNDERSTANDING RULES:
+
+1. BUSINESS PROSPECTING vs CONTACT FILTERING:
+   - PROSPECT_BUSINESSES: User wants to find NEW businesses/companies in a location (e.g., "find dentists in Mt. Lebanon", "search for tech companies downtown", "prospect restaurants in Oakland")
+   - FILTER_CONTACTS: User wants to filter EXISTING contacts in the database (e.g., "show me contacts with financial services", "find contacts in downtown", "get contacts with tech companies")
+
+2. CONTEXT CLUES FOR BUSINESS PROSPECTING:
+   - Contains business categories (dentists, restaurants, tech companies, financial services, etc.)
+   - Contains location references (in Mt. Lebanon, downtown, Oakland, etc.)
+   - Uses prospecting language (find, search, prospect, locate, get businesses/companies)
+   - Implies finding NEW businesses, not existing contacts
+
+3. CONTEXT CLUES FOR CONTACT FILTERING:
+   - References existing contacts ("show me contacts", "find contacts", "get contacts")
+   - Uses filtering language ("with", "that have", "in the database")
+   - Implies searching through existing contact records
+
+4. EXAMPLES:
+   - "find dentists in Mt. Lebanon" → PROSPECT_BUSINESSES (businessCategory: "dentists", location: "Mt. Lebanon")
+   - "show me contacts with financial services" → FILTER_CONTACTS (filterCriteria: "financial services", filterField: "businessSector")
+   - "search for tech companies downtown" → PROSPECT_BUSINESSES (businessCategory: "tech companies", location: "downtown")
+   - "find contacts in downtown" → FILTER_CONTACTS (filterCriteria: "downtown", filterField: "address")
+
+5. CONTACT SEARCH vs BUSINESS PROSPECTING:
+   - "find John Smith" → SEARCH_CONTACT (contactIdentifier: "John Smith")
+   - "find dentists" → PROSPECT_BUSINESSES (businessCategory: "dentists")
+   - "show me contacts with Investor business sector" → FILTER_CONTACTS (filterCriteria: "Investor", filterField: "businessSector")
+
+Use your contextual understanding to determine the user's intent based on the meaning and context, not just keywords.
 
 Examples of COMBINED_LIST_CREATION_AND_ATTACHMENT:
 - "create a contact list with tech companies criteria, then attach that list to the downtown office listing"

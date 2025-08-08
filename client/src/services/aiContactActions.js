@@ -87,13 +87,7 @@ export async function handleAIListCreation(description) {
  * @returns {boolean} True if message contains contact action keywords
  */
 export function isContactActionCommand(message) {
-  // Primary contact action keywords (high priority)
-  const primaryKeywords = [
-    'update', 'change', 'set', 'modify', 'edit',
-    'delete', 'remove', 'add', 'create', 'new contact'
-  ];
-  
-  // Activity creation patterns
+  // Activity creation patterns (high priority - these are clear contact actions)
   const activityPatterns = [
     /called me/i,
     /emailed me/i,
@@ -118,14 +112,10 @@ export function isContactActionCommand(message) {
     /discussed.*with/i
   ];
   
-  // Contact filtering patterns (HIGHEST PRIORITY)
-  const contactFilteringPatterns = [
-    /^show\s+me\s+all\s+contacts\s+with/i,
-    /^show\s+me\s+contacts\s+with/i,
-    /^find\s+contacts\s+with/i,
-    /^display\s+contacts\s+with/i,
-    /^get\s+contacts\s+with/i,
-    /^contacts\s+with/i
+  // Primary contact action keywords (clear contact operations)
+  const primaryKeywords = [
+    'update', 'change', 'set', 'modify', 'edit',
+    'delete', 'remove', 'add', 'create', 'new contact'
   ];
   
   // Secondary keywords that indicate contact actions when combined with primary
@@ -136,17 +126,12 @@ export function isContactActionCommand(message) {
   
   const lowerMessage = message.toLowerCase();
   
-  // Check for contact filtering patterns first (HIGHEST PRIORITY)
-  if (contactFilteringPatterns.some(pattern => pattern.test(message))) {
-    return true;
-  }
-  
   // Check for activity patterns (these are high priority)
   if (activityPatterns.some(pattern => pattern.test(message))) {
     return true;
   }
   
-  // Check for primary keywords first (these always indicate contact actions)
+  // Check for primary keywords (these always indicate contact actions)
   if (primaryKeywords.some(keyword => lowerMessage.includes(keyword))) {
     return true;
   }
@@ -163,6 +148,8 @@ export function isContactActionCommand(message) {
     return !isListCreation;
   }
   
+  // For ambiguous cases (like "find dentists" vs "find John Smith"), 
+  // let GPT handle the contextual understanding
   return false;
 }
 
@@ -433,64 +420,25 @@ export async function processListCreation(description) {
  * @returns {boolean} True if message contains business prospecting keywords
  */
 export function isBusinessProspectingCommand(message) {
-  const prospectingKeywords = [
-    'find', 'search', 'prospect', 'locate', 'get',
-    'businesses', 'companies', 'business', 'company'
-  ];
-  
-  const locationKeywords = [
-    'in', 'at', 'near', 'around', 'within', 'located in'
-  ];
-  
-  const businessCategoryKeywords = [
-    'financial services', 'restaurants', 'tech', 'healthcare', 'manufacturing',
-    'retail', 'construction', 'real estate', 'legal', 'accounting',
-    'insurance', 'banking', 'consulting', 'marketing', 'advertising'
+  // Only catch very clear business prospecting patterns
+  // Let GPT handle the contextual understanding for ambiguous cases
+  const clearProspectingPatterns = [
+    /prospect.*businesses?.*in/i,
+    /prospect.*companies?.*in/i,
+    /search.*for.*businesses?.*in/i,
+    /search.*for.*companies?.*in/i
   ];
   
   const lowerMessage = message.toLowerCase();
   
-  // Check for business prospecting patterns (MUST include business/company keywords)
-  const prospectingPatterns = [
-    /find.*businesses?.*in/i,
-    /search.*for.*businesses?.*in/i,
-    /prospect.*businesses?.*in/i,
-    /locate.*businesses?.*in/i,
-    /find.*companies?.*in/i,
-    /search.*for.*companies?.*in/i,
-    /prospect.*companies?.*in/i,
-    /locate.*companies?.*in/i,
-    /find.*\w+.*businesses?.*in/i,
-    /search.*for.*\w+.*businesses?.*in/i,
-    /prospect.*\w+.*businesses?.*in/i,
-    /locate.*\w+.*businesses?.*in/i
-  ];
-  
-  // Check for specific patterns first
-  if (prospectingPatterns.some(pattern => pattern.test(message))) {
+  // Check for very clear prospecting patterns
+  if (clearProspectingPatterns.some(pattern => pattern.test(message))) {
     return true;
   }
   
-  // EXCLUDE contact filtering commands first
-  const contactFilteringPatterns = [
-    /show.*me.*contacts.*with/i,
-    /find.*contacts.*with/i,
-    /display.*contacts.*with/i,
-    /get.*contacts.*with/i,
-    /contacts.*with/i
-  ];
-  
-  if (contactFilteringPatterns.some(pattern => pattern.test(message))) {
-    return false; // This is contact filtering, not business prospecting
-  }
-  
-  // Check for keywords that indicate business prospecting
-  const hasProspectingKeyword = prospectingKeywords.some(keyword => lowerMessage.includes(keyword));
-  const hasLocationKeyword = locationKeywords.some(keyword => lowerMessage.includes(keyword));
-  const hasBusinessCategory = businessCategoryKeywords.some(keyword => lowerMessage.includes(keyword));
-  
-  // Must have prospecting keyword and location keyword, or business category
-  return hasProspectingKeyword && (hasLocationKeyword || hasBusinessCategory);
+  // For ambiguous cases like "find dentists in Mt. Lebanon" vs "find John Smith",
+  // let GPT handle the contextual understanding
+  return false;
 }
 
 /**
@@ -507,17 +455,34 @@ export async function processBusinessProspecting(message) {
     
     console.log('🔍 Business prospecting response:', result);
     
-    // Standardize response format
-    return {
-      success: true,
-      data: result,
-      message: result.message || 'Business prospecting completed successfully',
-      type: 'business_prospecting',
-      businessesFound: result.businessesFound || 0,
-      searchLocation: result.data?.searchLocation,
-      searchTerms: result.data?.searchTerms,
-      businesses: result.data?.businesses || []
-    };
+    // Check if this is actually a business prospecting response
+    if (result.action === 'prospect_businesses') {
+      // Extract business data from the AI response
+      const businessData = result.data || {};
+      
+      return {
+        success: true,
+        data: businessData,
+        message: result.message || 'Business prospecting completed successfully',
+        type: 'business_prospecting',
+        businessesFound: businessData.businessesFound || businessData.businesses?.length || 0,
+        searchLocation: businessData.searchLocation,
+        searchTerms: businessData.searchTerms,
+        businesses: businessData.businesses || []
+      };
+    } else {
+      // If AI didn't detect it as business prospecting, return the original response
+      return {
+        success: true,
+        data: result,
+        message: result.message || 'Request processed successfully',
+        type: 'ai_response',
+        businessesFound: result.data?.businessesFound || result.data?.businesses?.length || 0,
+        searchLocation: result.data?.searchLocation,
+        searchTerms: result.data?.searchTerms,
+        businesses: result.data?.businesses || []
+      };
+    }
   } catch (error) {
     console.error('❌ Business prospecting error:', error);
     return {

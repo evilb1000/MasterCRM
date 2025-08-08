@@ -481,37 +481,109 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
           throw new Error(result.error);
         }
       } else {
-        // Check if this is a CRM-related query before routing to general chat
-        const isCRMRelated = isCRMQuery(currentMessage);
-        if (!isCRMRelated) {
-          console.log('🚫 Non-CRM query detected, returning CRM-only message');
-          responseText = "I am only trained to provide assistance within the confines of the CRM system. Please ask me about contact management, activity logging, list creation, or other CRM-related tasks.";
-          actionType = 'crm_only';
-        } else {
-          console.log('💬 Routing to General Chat endpoint');
-          // Use regular chat endpoint
-          const result = await axios.post(ENDPOINTS.CHAT, {
-            message: currentMessage
-          });
+        // FALLBACK: Send ambiguous commands to AI for contextual understanding
+        console.log('🤖 Routing to AI for contextual understanding');
+        const result = await processContactAction(currentMessage);
         
-          // Better response handling to prevent crashes
-          if (result.data) {
-            if (typeof result.data === 'string') {
-              responseText = result.data;
-            } else if (result.data.reply) {
-              responseText = result.data.reply;
-            } else if (result.data.response) {
-              responseText = result.data.response;
-            } else if (result.data.message) {
-              responseText = result.data.message;
-            } else if (result.data.text) {
-              responseText = result.data.text;
-            } else {
-              // Fallback: stringify the entire response for debugging
-              responseText = JSON.stringify(result.data, null, 2);
+        if (result.success) {
+          responseText = result.message;
+          
+          // Handle different AI response types
+          if (result.action === 'filter_contacts') {
+            actionType = 'filter_contacts';
+            console.log('🔍 AI detected contact filtering:', result);
+            
+            const contacts = result.data?.data?.contacts || result.data?.contacts;
+            if (contacts && contacts.length > 0) {
+              setContactFilterResults({
+                contacts: contacts,
+                searchField: result.data.searchField || result.searchField,
+                filterCriteria: result.data.filterCriteria || result.filterCriteria,
+                totalFound: result.data.totalFound || result.contactsFound
+              });
+              setShowContactFilterResults(true);
             }
+          } else if (result.action === 'prospect_businesses') {
+            actionType = 'business_prospecting';
+            console.log('🏢 AI detected business prospecting:', result);
+            
+            // Debug: Log the full result structure to understand the data layout
+            console.log('🏢 Full result structure:', JSON.stringify(result, null, 2));
+            
+            // Extract business data from the AI response structure
+            // The data might be nested in result.data.data or result.data
+            const businessData = result.data?.data || result.data || {};
+            const businesses = businessData.businesses || [];
+            
+            console.log('🏢 Business data extracted:', {
+              businesses: businesses.length,
+              searchLocation: businessData.searchLocation,
+              searchTerms: businessData.searchTerms,
+              businessesFound: result.businessesFound || businesses.length
+            });
+            
+            if (businesses.length > 0) {
+              console.log('🏢 Triggering business results modal with', businesses.length, 'businesses');
+              window.dispatchEvent(new CustomEvent('showBusinessResults', {
+                detail: {
+                  businesses: businesses,
+                  searchLocation: businessData.searchLocation,
+                  searchTerms: businessData.searchTerms,
+                  businessesFound: result.businessesFound || businesses.length
+                }
+              }));
+            } else {
+              console.log('🏢 No businesses found in response data');
+              console.log('🏢 Available data keys:', Object.keys(businessData));
+            }
+          } else {
+            actionType = 'ai_contact_action';
           }
-          actionType = 'chat';
+          
+          // Handle activity creation events
+          if (result.data && result.data.action === 'create_activity') {
+            console.log('🎯 AI Activity created, dispatching refresh event');
+            window.dispatchEvent(new CustomEvent('aiActivityCreated', {
+              detail: {
+                contactId: result.data.contactId,
+                activityType: result.data.activityType,
+                activityId: result.data.activityId
+              }
+            }));
+          }
+        } else {
+          // If AI fails, check if this is a CRM-related query before routing to general chat
+          const isCRMRelated = isCRMQuery(currentMessage);
+          if (!isCRMRelated) {
+            console.log('🚫 Non-CRM query detected, returning CRM-only message');
+            responseText = "I am only trained to provide assistance within the confines of the CRM system. Please ask me about contact management, activity logging, list creation, or other CRM-related tasks.";
+            actionType = 'crm_only';
+          } else {
+            console.log('💬 Routing to General Chat endpoint');
+            // Use regular chat endpoint
+            const chatResult = await axios.post(ENDPOINTS.CHAT, {
+              message: currentMessage
+            });
+          
+            // Better response handling to prevent crashes
+            if (chatResult.data) {
+              if (typeof chatResult.data === 'string') {
+                responseText = chatResult.data;
+              } else if (chatResult.data.reply) {
+                responseText = chatResult.data.reply;
+              } else if (chatResult.data.response) {
+                responseText = chatResult.data.response;
+              } else if (chatResult.data.message) {
+                responseText = chatResult.data.message;
+              } else if (chatResult.data.text) {
+                responseText = chatResult.data.text;
+              } else {
+                // Fallback: stringify the entire response for debugging
+                responseText = JSON.stringify(chatResult.data, null, 2);
+              }
+            }
+            actionType = 'chat';
+          }
         }
       }
       
