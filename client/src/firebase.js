@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import firebase from 'firebase/compat/app';
 import 'firebase/compat/firestore';
 
@@ -13,6 +14,16 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
+// Debug logging
+console.log('Firebase Config Check:', {
+  apiKey: firebaseConfig.apiKey ? 'SET' : 'MISSING',
+  authDomain: firebaseConfig.authDomain ? 'SET' : 'MISSING',
+  projectId: firebaseConfig.projectId ? 'SET' : 'MISSING',
+  storageBucket: firebaseConfig.storageBucket ? 'SET' : 'MISSING',
+  messagingSenderId: firebaseConfig.messagingSenderId ? 'SET' : 'MISSING',
+  appId: firebaseConfig.appId ? 'SET' : 'MISSING'
+});
+
 // Check if config is properly set up
 const isConfigValid = firebaseConfig.apiKey && firebaseConfig.projectId;
 
@@ -23,10 +34,20 @@ if (!isConfigValid) {
 // Initialize Firebase
 let app;
 let db;
+let auth;
 
 try {
   app = initializeApp(firebaseConfig);
   db = getFirestore(app);
+  auth = getAuth(app);
+  
+  console.log('Firebase Auth initialized:', auth ? 'SUCCESS' : 'FAILED');
+  
+  // Set auth persistence to local
+  if (auth) {
+    setPersistence(auth, browserLocalPersistence);
+    console.log('Auth persistence set to local');
+  }
   
   // Initialize vanilla Firebase SDK
   firebase.initializeApp(firebaseConfig);
@@ -40,8 +61,9 @@ try {
       throw new Error('Firebase not properly configured. Please update your .env file with your actual Firebase config values.');
     }
   };
+  auth = null;
 }
 
-export { db };
+export { db, auth, GoogleAuthProvider };
 export { firebase };
 export default app; 

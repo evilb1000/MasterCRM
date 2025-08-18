@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, useNavigate } from 'react-router-dom';
-import { collection, getDocs, query, where } from 'firebase/firestore';
-import { db } from './firebase';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import LoginScreen from './components/LoginScreen';
+import UnauthorizedScreen from './components/UnauthorizedScreen';
+import LoadingScreen from './components/LoadingScreen';
 import ChatBox from './components/ChatBox';
 import Contacts from './pages/Contacts';
 import Listings from './pages/Listings';
@@ -10,9 +12,79 @@ import Tasks from './pages/Tasks';
 import ShowListsModal from './components/ShowListsModal';
 import ContactModal from './components/ContactModal';
 import ContactsFilterModal from './components/ContactsFilterModal';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from './firebase';
+
+// Auth Gate Component
+const AuthGate = ({ children }) => {
+  const { authState, loading } = useAuth();
+  
+  console.log('AuthGate render - authState:', authState, 'loading:', loading);
+  
+  if (loading) {
+    console.log('AuthGate: showing loading screen');
+    return <LoadingScreen />;
+  }
+  
+  switch (authState) {
+    case 'signedOut':
+      console.log('AuthGate: redirecting to login');
+      return <Navigate to="/login" replace />;
+    case 'signedInPendingCheck':
+      console.log('AuthGate: showing loading screen (pending)');
+      return <LoadingScreen />;
+    case 'signedInApproved':
+      console.log('AuthGate: user approved, showing protected content');
+      return children;
+    case 'signedInRejected':
+      console.log('AuthGate: user rejected, showing unauthorized screen');
+      return <UnauthorizedScreen />;
+    default:
+      console.log('AuthGate: default case, redirecting to login');
+      return <Navigate to="/login" replace />;
+  }
+};
+
+// Protected Route Component
+const ProtectedRoute = ({ children }) => {
+  const { authState, loading } = useAuth();
+  
+  console.log('ProtectedRoute render - authState:', authState, 'loading:', loading);
+  
+  if (loading) {
+    console.log('ProtectedRoute: showing loading screen');
+    return <LoadingScreen />;
+  }
+  
+  if (authState === 'signedInApproved') {
+    console.log('ProtectedRoute: user approved, showing protected content');
+    return children;
+  }
+  
+  // For any other auth state, show the AuthGate
+  console.log('ProtectedRoute: showing AuthGate for state:', authState);
+  return <AuthGate>{children}</AuthGate>;
+};
+
+// Login route wrapper to auto-redirect if already approved
+const LoginRoute = () => {
+  const { authState, loading } = useAuth();
+  console.log('LoginRoute render - authState:', authState, 'loading:', loading);
+  if (loading) return <LoadingScreen />;
+  if (authState === 'signedInApproved') {
+    console.log('LoginRoute: user approved, redirecting to /');
+    return <Navigate to="/" replace />;
+  }
+  if (authState === 'signedInRejected') {
+    console.log('LoginRoute: user rejected, showing unauthorized');
+    return <UnauthorizedScreen />;
+  }
+  return <LoginScreen />;
+};
 
 const HomePage = () => {
   const navigate = useNavigate();
+  const { signOutUser } = useAuth();
   const [showListsModal, setShowListsModal] = useState(false);
   const [selectedContact, setSelectedContact] = useState(null);
   const [showContactDetail, setShowContactDetail] = useState(false);
@@ -67,6 +139,15 @@ const HomePage = () => {
       // New format - contacts array from AI response
       setFilterSearchCriteria(filterCriteria || 'Unknown criteria');
       setShowContactsFilterModal(true);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOutUser();
+      console.log('User logged out successfully');
+    } catch (error) {
+      console.error('Logout error:', error);
     }
   };
 
@@ -157,6 +238,36 @@ const HomePage = () => {
             Tasks
           </button>
         </div>
+
+        {/* Logout Button */}
+        <div style={{ marginTop: '20px', textAlign: 'center' }}>
+          <button
+            style={{
+              background: 'rgba(220, 53, 69, 0.9)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '12px 24px',
+              fontSize: 16,
+              fontWeight: 500,
+              cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              transition: 'all 0.2s ease',
+              fontFamily: 'Georgia, serif',
+            }}
+            onClick={handleLogout}
+            onMouseEnter={(e) => {
+              e.target.style.background = 'rgba(220, 53, 69, 1)';
+              e.target.style.transform = 'translateY(-1px)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = 'rgba(220, 53, 69, 0.9)';
+              e.target.style.transform = 'translateY(0)';
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
       </div>
       
       {/* Show Lists Modal */}
@@ -193,16 +304,59 @@ const HomePage = () => {
 };
 
 const App = () => {
+  console.log('App component rendering');
+  
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/contacts" element={<Contacts />} />
-        <Route path="/listings" element={<Listings />} />
-        <Route path="/prospects" element={<Prospects />} />
-        <Route path="/tasks" element={<Tasks />} />
-      </Routes>
-    </Router>
+    <AuthProvider>
+      <Router>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={
+            <div>
+              {console.log('Rendering login route')}
+              <LoginRoute />
+            </div>
+          } />
+          {/* Protected */}
+          <Route path="/" element={
+            <div>
+              {console.log('Rendering home route')}
+              <ProtectedRoute><HomePage /></ProtectedRoute>
+            </div>
+          } />
+          <Route path="/contacts" element={
+            <div>
+              {console.log('Rendering contacts route')}
+              <ProtectedRoute><Contacts /></ProtectedRoute>
+            </div>
+          } />
+          <Route path="/listings" element={
+            <div>
+              {console.log('Rendering listings route')}
+              <ProtectedRoute><Listings /></ProtectedRoute>
+            </div>
+          } />
+          <Route path="/prospects" element={
+            <div>
+              {console.log('Rendering prospects route')}
+              <ProtectedRoute><Prospects /></ProtectedRoute>
+            </div>
+          } />
+          <Route path="/tasks" element={
+            <div>
+              {console.log('Rendering tasks route')}
+              <ProtectedRoute><Tasks /></ProtectedRoute>
+            </div>
+          } />
+          <Route path="*" element={
+            <div>
+              {console.log('Rendering catch-all route, redirecting to login')}
+              <Navigate to="/login" replace />
+            </div>
+          } />
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 };
 
