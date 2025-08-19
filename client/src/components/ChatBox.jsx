@@ -1642,7 +1642,7 @@ const styles = {
     fontFamily: 'Georgia, serif',
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
   },
-  textarea: {
+  modalTextarea: {
     width: '100%',
     padding: '10px',
     border: '1px solid rgba(0, 0, 0, 0.1)',
