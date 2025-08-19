@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useContext } from 'react';
 import axios from 'axios';
 import { doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ENDPOINTS } from '../config.js';
 import { handleAIContactAction, isContactActionCommand, processContactAction, isListCreationCommand, processListCreation, isCombinedListCreationAndAttachmentCommand, processCombinedListCreationAndAttachment, isCombinedActivityCreationAndListingAttachmentCommand, processCombinedActivityCreationAndListingAttachment, isBusinessProspectingCommand, processBusinessProspecting } from '../services/aiContactActions';
 import { isTaskCreationCommand, processTaskCreation, isTaskFilteringCommand, processTaskFiltering } from '../services/aiTaskActions';
+import { AuthContext } from '../contexts/AuthContext';
 
 // Helper function to check if a query is CRM-related
 function isCRMQuery(message) {
@@ -215,6 +216,9 @@ const analyzeSearchField = (searchTerm) => {
 };
 
 const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContactDetail }) => {
+  // Get Gmail access token from AuthContext
+  const { gmailAccessToken } = useContext(AuthContext);
+  
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -326,6 +330,16 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
       const isBusinessProspecting = isBusinessProspectingCommand(currentMessage);
       const isTaskCreation = isTaskCreationCommand(currentMessage);
       const isTaskFiltering = isTaskFilteringCommand(currentMessage);
+      
+      // Import and check for email commands
+      let isEmail = false;
+      try {
+        const { isEmailCommand } = await import('../services/aiEmailer.js');
+        isEmail = isEmailCommand(currentMessage);
+      } catch (error) {
+        console.log('⚠️ Could not import email command detection:', error);
+      }
+      
       console.log('🔍 Command Analysis:', {
         message: currentMessage,
         isCombinedListCreationAndAttachment: isCombinedList,
@@ -333,7 +347,8 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
         isContactAction: isContact,
         isBusinessProspecting: isBusinessProspecting,
         isTaskCreation: isTaskCreation,
-        isTaskFiltering: isTaskFiltering
+        isTaskFiltering: isTaskFiltering,
+        isEmail: isEmail
       });
       
       // Additional debugging for activity patterns
@@ -341,8 +356,97 @@ const ChatBox = ({ onShowLists, onShowContact, onShowContactsWith, onShowContact
         console.log('🔍 Activity pattern detected in message:', currentMessage);
       }
 
+      // Check if this is an email command (HIGHEST PRIORITY - before task filtering)
+      if (isEmail) {
+        console.log('📧 Routing to AI Email endpoint');
+        try {
+          const { processEmailCommand } = await import('../services/aiEmailer.js');
+          const result = await processEmailCommand(currentMessage);
+          
+          if (result.success) {
+            responseText = result.message;
+            actionType = 'email_composition';
+            
+            // If email composition was successful, try to send it via Gmail API
+            if (result.emailReady && result.emailData && gmailAccessToken) {
+              console.log('📧 Attempting to send email via Gmail API...');
+              console.log('📧 gmailAccessToken available:', !!gmailAccessToken);
+              console.log('📧 result.emailData:', result.emailData);
+              
+              try {
+                // Import gmailService to send the email
+                const { gmailService } = await import('../services/gmailService.js');
+                
+                // FIRST: Use AI to find the contact and get their email
+                console.log('🔍 Using AI to find contact:', result.emailData.recipient);
+                const contactSearchCommand = `find ${result.emailData.recipient}`;
+                
+                // Import AI contact actions to search for the contact
+                const { handleAIContactAction } = await import('../services/aiContactActions.js');
+                const contactSearchResult = await handleAIContactAction(contactSearchCommand);
+                console.log('🔍 AI contact search result:', contactSearchResult);
+                
+                let contactEmail = null;
+                
+                // Try to extract email from the AI response
+                if (contactSearchResult.success && contactSearchResult.contacts && contactSearchResult.contacts.length > 0) {
+                  const contact = contactSearchResult.contacts[0];
+                  contactEmail = contact.email;
+                  console.log('✅ Found contact via AI:', contact);
+                }
+                
+                // If AI didn't find it, fall back to direct Firebase lookup
+                if (!contactEmail) {
+                  console.log('🔍 AI contact search failed, trying direct Firebase lookup...');
+                  const contactInfo = await gmailService.lookupContactEmail(result.emailData.recipient);
+                  console.log('📧 Direct contact lookup result:', contactInfo);
+                  
+                  if (contactInfo.found && contactInfo.email) {
+                    contactEmail = contactInfo.email;
+                  }
+                }
+                
+                if (contactEmail) {
+                  console.log('📧 Sending email to:', contactEmail);
+                  
+                  // Send the email via Gmail API
+                  const emailResult = await gmailService.sendNewEmail(
+                    gmailAccessToken,
+                    contactEmail,
+                    result.emailData.subject,
+                    result.emailData.body
+                  );
+                  
+                  console.log('✅ Email sent successfully:', emailResult);
+                  responseText += `\n\n📧 Email sent successfully to ${contactEmail}!`;
+                  
+                  // Update the result to show email was sent
+                  result.emailSent = true;
+                  result.recipient = contactEmail;
+                } else {
+                  console.log('❌ Contact not found via any method:', result.emailData.recipient);
+                  responseText += `\n\n⚠️ Could not find email address for ${result.emailData.recipient}. Email was composed but not sent.`;
+                }
+              } catch (sendError) {
+                console.error('❌ Error sending email:', sendError);
+                responseText += `\n\n⚠️ Email was composed but failed to send: ${sendError.message}`;
+              }
+            } else {
+              console.log('📧 Email sending conditions not met:');
+              console.log('📧 - result.emailReady:', result.emailReady);
+              console.log('📧 - result.emailData:', result.emailData);
+              console.log('📧 - gmailAccessToken available:', !!gmailAccessToken);
+            }
+          } else {
+            throw new Error(result.error);
+          }
+        } catch (error) {
+          console.error('❌ Error processing email command:', error);
+          responseText = `❌ Failed to process email command: ${error.message}`;
+        }
+      }
       // Check if this is a task filtering command (HIGHEST PRIORITY)
-      if (isTaskFiltering) {
+      else if (isTaskFiltering) {
         console.log('📋 Routing to Task Filtering endpoint');
         const result = await processTaskFiltering(currentMessage);
         
